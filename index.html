@@ -202,6 +202,10 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
           Adicionar músicas
         </label>
         <input id="files" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac,.opus" multiple hidden>
+        <button class="btn" id="linkbtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+          Adicionar link
+        </button>
         <label class="btn" for="folder" id="folderbtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
           Importar pasta
@@ -428,6 +432,8 @@ function next(auto){if(!S.queue.length)return;
 function prev(){if(audio.currentTime>3||S.qi<=0){audio.currentTime=0;return}S.qi--;load()}
 function toggle(){if(!cur()){const ids=filtered();if(ids.length)playFrom(ids,0);return}audio.paused?audio.play().catch(()=>{}):audio.pause()}
 audio.addEventListener('ended',()=>next(true));
+audio.addEventListener('error',()=>{const t=cur();if(!t||!t.link)return;
+  toast(IN_CLAUDE?'Links não tocam na versão dentro do Claude. Abra pelo site da Vitrola.':`Não deu para tocar "${t.title}". O link pode ter saído do ar ou não ser um arquivo de áudio.`)});
 /* duração que o celular não leu na hora de adicionar: grava quando a faixa toca */
 audio.addEventListener('loadedmetadata',()=>{const t=cur();if(t&&!t.duration&&isFinite(audio.duration)&&audio.duration>0){t.duration=audio.duration;
   if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}renderHead();renderList()}});
@@ -490,7 +496,7 @@ function renderList(){const ids=filtered(),c=cur(),inPl=S.playlists.some(p=>p.id
     return `<div class="row${on?' playing':''}" data-id="${id}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><button data-act="play" aria-label="${pl?'Pausar':'Tocar'} ${esc(t.title)}">${pl?ICON.pause:ICON.play}</button></div>
       <div class="cover" style="${coverStyle(t)}"></div>
-      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a">${t.demo?'<span class="tag">Exemplo</span>':''}<span class="alink" data-act="artist">${esc(t.artist)}</span><span class="gtxt">· ${esc(t.genre||NOGENRE)}</span></div></div>
+      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a">${t.demo?'<span class="tag">Exemplo</span>':t.link?'<span class="tag">Link</span>':''}<span class="alink" data-act="artist">${esc(t.artist)}</span><span class="gtxt">· ${esc(t.genre||NOGENRE)}</span></div></div>
       <div class="dur">${fmt(t.duration)}</div>
       <div class="acts"><button class="icon" data-act="genre" aria-label="Mudar pasta e categoria">${ICON.tag}</button><button class="icon" data-act="add" aria-label="Adicionar à playlist">${ICON.plus}</button>
         <button class="icon rm" data-act="rm" aria-label="${inPl?'Tirar da playlist':'Remover da biblioteca'}">${ICON.x}</button></div></div>`}).join('')}
@@ -521,6 +527,29 @@ async function filesFromDrop(dt){const items=[...(dt.items||[])].map(i=>i.webkit
   const walk=async(entry,path)=>{if(entry.isFile){await new Promise(r=>entry.file(f=>{try{Object.defineProperty(f,'vitrolaPath',{value:path+f.name})}catch(e){}out.push(f);r()},r))}
     else if(entry.isDirectory){const rd=entry.createReader();let batch;do{batch=await new Promise(r=>rd.readEntries(r,()=>r([])));for(const e of batch)await walk(e,path+entry.name+'/')}while(batch.length)}};
   for(const e of items)await walk(e,'');return out}
+/* adicionar por link: a música toca direto do endereço, sem ocupar espaço no aparelho */
+const IN_CLAUDE=/(^|\.)claude(usercontent)?\.(ai|com)$/.test(location.hostname)||!!window.claude;
+function directLink(u){try{const x=new URL(u.trim());if(!/^https?:$/.test(x.protocol))return null;
+    const d=x.pathname.match(/\/file\/d\/([^/]+)/);if(/drive\.google\.com$/.test(x.hostname)&&(d||x.searchParams.get('id')))return`https://drive.google.com/uc?export=download&id=${d?d[1]:x.searchParams.get('id')}`;
+    if(/dropbox\.com$/.test(x.hostname)){x.searchParams.delete('dl');x.searchParams.set('raw','1');return x.toString()}
+    return x.toString()}catch(e){return null}}
+function openLinkPop(btn){pop.innerHTML=`<div class="label">Adicionar por link</div>
+  <div class="none">Cole o endereço direto de um arquivo de áudio (MP3, M4A, OGG…). Links do Google Drive e do Dropbox também servem.${IN_CLAUDE?'<br><strong>Nesta versão dentro do Claude os links não tocam. Use o site da Vitrola.</strong>':''}</div>
+  <form id="lform"><input id="lurl" type="url" inputmode="url" placeholder="https://…" aria-label="Link da música" required><button type="submit">Adicionar</button></form>`;
+  placePop(btn.getBoundingClientRect(),'','link');pop.style.maxWidth='min(420px, calc(100vw - 24px))';$('#lurl').focus()}
+async function addLink(raw){const url=directLink(raw);
+  if(!url){toast('Esse endereço não é um link válido');return}
+  if(/(youtube\.com|youtu\.be|spotify\.com|deezer\.com|soundcloud\.com|music\.apple\.com)/i.test(url)){toast('Esse site não entrega o arquivo de áudio. Use o link direto de um MP3.');return}
+  if(S.tracks.some(t=>t.link===url)){toast('Esse link já está na biblioteca');return}
+  pop.hidden=true;toast('Verificando o link…');
+  let name=decodeURIComponent(new URL(raw.trim()).pathname.split('/').pop()||'Música');if(!/\.[a-z0-9]{2,4}$/i.test(name))name+='.mp3';
+  const p=parseName(name);let {title,artist}=fixMeta(p.artist,p.title);
+  const duration=await getDuration(url);
+  const rec={id:uid(),title,artist,genre:genreFor(artist,''),link:url,duration,added:Date.now()};
+  S.tracks.push({...rec,url});const p2=S.playlists.find(x=>x.id===S.view);if(p2){p2.ids.push(rec.id);savePL()}
+  askPersist();await idbPut(rec);render();autoClassify();
+  toast(duration?`"${title}" adicionada por link`:`"${title}" adicionada. Se não tocar, o link pode não ser de um arquivo de áudio.`)}
+$('#linkbtn').onclick=e=>{e.stopPropagation();openLinkPop(e.currentTarget)};
 /* nome da pasta ajuda a achar o artista quando o arquivo não diz */
 function folderArtist(f){const p=(f.vitrolaPath||f.webkitRelativePath||'').split('/').slice(0,-1).reverse();
   for(const d of p){const k=keyA(d),c=ARTIST_NAMES.find(x=>keyA(x)===k);if(c)return c;if(AG[k])return d}return null}
@@ -553,6 +582,7 @@ function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)retur
   if(!t.manualGenre)t.genre=knownGenre(a)||t.genre;if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}
   pop.hidden=true;render();toast(`"${t.title}" movida para a pasta ${a}`);autoClassify()}
 pop.addEventListener('submit',e=>{e.preventDefault();
+  if(e.target.id==='lform'){addLink($('#lurl').value);return}
   if(e.target.id==='aform'){const v=$('#anew').value.trim();if(v)setArtist(pop.dataset.id,v);return}
   const v=$('#gnew').value.trim();if(v)setGenre(pop.dataset.id,v)});
 pop.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.type==='submit')return;
@@ -575,7 +605,7 @@ addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=t
   syncPlay();updateNow();render();
   const saved=await idbAll();saved.sort((a,b)=>a.added-b.added).forEach(r=>{try{if(!r.manualArtist){const m=fixMeta(r.artist,r.title);if(m.artist!==r.artist||m.title!==r.title){r.artist=m.artist;r.title=m.title;r.fixed=1}}
   const g=r.manualGenre?r.genre:(knownGenre(r.artist)||r.genre||NOGENRE);if(g!==r.genre){r.genre=g;r.fixed=1}if(r.fixed){delete r.fixed;idbPut(r)}
-  S.tracks.push({...r,genre:g,url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):null})}catch(e){}});
+  S.tracks.push({...r,genre:g,url:r.link||URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):null})}catch(e){}});
   render();autoClassify();if(!saved.length)addDemos();
   /* capa do álbum gravada nos arquivos já adicionados antes */
   for(const t of S.tracks.filter(t=>!t.demo&&!t.artChecked&&t.blob)){const tags=await readTags(t.blob);t.artChecked=1;
