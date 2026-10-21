@@ -202,6 +202,11 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
           Adicionar músicas
         </label>
         <input id="files" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac,.opus" multiple hidden>
+        <label class="btn" for="folder" id="folderbtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+          Importar pasta
+        </label>
+        <input id="folder" type="file" webkitdirectory directory multiple hidden>
       </div>
     </div>
     <div class="list" id="list"></div>
@@ -357,10 +362,13 @@ async function idbDel(id){const db=await dbp;if(!db)return;try{db.transaction('t
 function getDuration(url){return new Promise(res=>{const a=new Audio();let done=false;const fin=v=>{if(!done){done=true;res(v)}};
   a.preload='metadata';a.onloadedmetadata=()=>fin(a.duration);a.onerror=()=>fin(0);setTimeout(()=>fin(0),5000);a.src=url})}
 async function addFiles(files){let n=0,dup=0,failed=0;askPersist();
-  for(const f of files){if(!(f.type||'').startsWith('audio')&&!/\.(mp3|m4a|wav|ogg|flac|aac|opus)$/i.test(f.name))continue;
+  const isAudio=f=>(f.type||'').startsWith('audio')||/\.(mp3|m4a|wav|ogg|flac|aac|opus)$/i.test(f.name);
+  const total=files.filter(isAudio).length;let k=0;
+  for(const f of files){if(!isAudio(f))continue;if(total>3)toast(`Importando ${++k} de ${total}…`);
     const url=URL.createObjectURL(f),fromName=parseName(f.name),tags=await readTags(f),duration=await getDuration(url);
     if(S.tracks.some(t=>t.blob&&t.blob.size===f.size&&(t.fileName||t.blob.name)===f.name)){dup++;continue}
-    const {title,artist}=fixMeta(badArtist(tags.artist)?fromName.artist:tags.artist,tags.title||fromName.title);
+    let {title,artist}=fixMeta(badArtist(tags.artist)?fromName.artist:tags.artist,tags.title||fromName.title);
+    if(artist===UNKNOWN)artist=folderArtist(f)||UNKNOWN;
     /* cópia simples do arquivo: é o formato que todos os navegadores aceitam guardar */
     let blob=f;try{blob=new Blob([await f.arrayBuffer()],{type:f.type||'audio/mpeg'})}catch(e){}
     const rec={id:uid(),title,artist,genre:genreFor(artist,tags.genre),blob,fileName:f.name,art:tags.art||null,artChecked:1,duration,added:Date.now()};
@@ -503,6 +511,19 @@ function removeTrack(id){const t=byId(id),p=S.playlists.find(p=>p.id===S.view);i
   idbDel(id);savePL();setTimeout(()=>{try{URL.revokeObjectURL(t.url)}catch(e){}},500);render();toast(`"${t.title}" removida`)}
 $('#q').addEventListener('input',e=>{S.q=e.target.value;renderList()});
 $('#files').addEventListener('change',e=>{addFiles([...e.target.files]);e.target.value=''});
+$('#folder').addEventListener('change',e=>{addFiles([...e.target.files]);e.target.value=''});
+/* iPhone e iPad não deixam escolher pasta pelo navegador */
+(()=>{const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  if(ios||!('webkitdirectory' in document.createElement('input')))$('#folderbtn').hidden=true})();
+/* lê pastas arrastadas, inclusive as de dentro */
+async function filesFromDrop(dt){const items=[...(dt.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+  if(!items.length)return[...(dt.files||[])];const out=[];
+  const walk=async(entry,path)=>{if(entry.isFile){await new Promise(r=>entry.file(f=>{try{Object.defineProperty(f,'vitrolaPath',{value:path+f.name})}catch(e){}out.push(f);r()},r))}
+    else if(entry.isDirectory){const rd=entry.createReader();let batch;do{batch=await new Promise(r=>rd.readEntries(r,()=>r([])));for(const e of batch)await walk(e,path+entry.name+'/')}while(batch.length)}};
+  for(const e of items)await walk(e,'');return out}
+/* nome da pasta ajuda a achar o artista quando o arquivo não diz */
+function folderArtist(f){const p=(f.vitrolaPath||f.webkitRelativePath||'').split('/').slice(0,-1).reverse();
+  for(const d of p){const k=keyA(d),c=ARTIST_NAMES.find(x=>keyA(x)===k);if(c)return c;if(AG[k])return d}return null}
 $('#newpl').addEventListener('submit',e=>{e.preventDefault();const n=$('#plname').value.trim();if(!n)return;
   const p={id:'p'+uid(),name:n,ids:[]};S.playlists.push(p);S.view=p.id;$('#plname').value='';savePL();render();toast(`Playlist "${n}" criada`)});
 let delArm=0;$('#delpl').onclick=()=>{const p=S.playlists.find(p=>p.id===S.view);if(!p)return;
@@ -546,7 +567,8 @@ let dragN=0;
 addEventListener('dragenter',e=>{if([...(e.dataTransfer?.types||[])].includes('Files')){dragN++;$('#drop').hidden=false}});
 addEventListener('dragleave',()=>{if(--dragN<=0){dragN=0;$('#drop').hidden=true}});
 addEventListener('dragover',e=>e.preventDefault());
-addEventListener('drop',e=>{e.preventDefault();dragN=0;$('#drop').hidden=true;if(e.dataTransfer?.files?.length)addFiles([...e.dataTransfer.files])});
+addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=true;if(!e.dataTransfer)return;
+  let list=[];try{list=await filesFromDrop(e.dataTransfer)}catch(err){list=[...(e.dataTransfer.files||[])]}if(list.length)addFiles(list)});
 
 /* início */
 (async()=>{S.playlists=loadPL();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
