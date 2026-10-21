@@ -205,7 +205,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
       </div>
     </div>
     <div class="list" id="list"></div>
-    <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na etiqueta. As músicas ficam salvas só neste aparelho e neste navegador, nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca. As três faixas marcadas como exemplo foram geradas aqui mesmo para você testar o player.</p>
+    <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na etiqueta. As músicas ficam salvas neste aparelho e continuam aqui quando você volta, desde que abra sempre pelo mesmo navegador e fora do modo anônimo. Nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca. As três faixas marcadas como exemplo foram geradas aqui mesmo para você testar o player.</p>
   </main>
 </div>
 
@@ -346,21 +346,29 @@ function savePL(){try{localStorage.setItem('vitrola.playlists',JSON.stringify(S.
 const dbp=new Promise(res=>{try{const r=indexedDB.open('vitrola',1);r.onupgradeneeded=()=>r.result.createObjectStore('tracks',{keyPath:'id'});
   r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}catch(e){res(null)}});
 async function idbAll(){const db=await dbp;if(!db)return[];return new Promise(res=>{try{const q=db.transaction('tracks').objectStore('tracks').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([])}catch(e){res([])}})}
-async function idbPut(r){const db=await dbp;if(!db)return;try{db.transaction('tracks','readwrite').objectStore('tracks').put(r)}catch(e){}}
+async function idbPut(r){const db=await dbp;if(!db)return false;return new Promise(res=>{try{const tx=db.transaction('tracks','readwrite');tx.objectStore('tracks').put(r);
+  tx.oncomplete=()=>res(true);tx.onerror=tx.onabort=()=>res(false)}catch(e){res(false)}})}
+/* pede ao navegador para não apagar a biblioteca quando faltar espaço */
+let persistAsked=false;async function askPersist(){if(persistAsked)return;persistAsked=true;try{if(navigator.storage&&navigator.storage.persist&&!(await navigator.storage.persisted()))await navigator.storage.persist()}catch(e){}}
+async function storageInfo(){try{if(!navigator.storage||!navigator.storage.estimate)return'';const {usage}=await navigator.storage.estimate();return usage?` · ${(usage/1048576).toFixed(0)} MB usados neste aparelho`:''}catch(e){return''}}
 async function idbDel(id){const db=await dbp;if(!db)return;try{db.transaction('tracks','readwrite').objectStore('tracks').delete(id)}catch(e){}}
 
 /* ---------- adicionar arquivos ---------- */
 function getDuration(url){return new Promise(res=>{const a=new Audio();let done=false;const fin=v=>{if(!done){done=true;res(v)}};
   a.preload='metadata';a.onloadedmetadata=()=>fin(a.duration);a.onerror=()=>fin(0);setTimeout(()=>fin(0),5000);a.src=url})}
-async function addFiles(files){let n=0,dup=0;
+async function addFiles(files){let n=0,dup=0,failed=0;askPersist();
   for(const f of files){if(!(f.type||'').startsWith('audio')&&!/\.(mp3|m4a|wav|ogg|flac|aac|opus)$/i.test(f.name))continue;
     const url=URL.createObjectURL(f),fromName=parseName(f.name),tags=await readTags(f),duration=await getDuration(url);
-    if(S.tracks.some(t=>t.blob&&t.blob.size===f.size&&t.blob.name===f.name)){dup++;continue}
+    if(S.tracks.some(t=>t.blob&&t.blob.size===f.size&&(t.fileName||t.blob.name)===f.name)){dup++;continue}
     const {title,artist}=fixMeta(badArtist(tags.artist)?fromName.artist:tags.artist,tags.title||fromName.title);
-    const rec={id:uid(),title,artist,genre:genreFor(artist,tags.genre),blob:f,art:tags.art||null,artChecked:1,duration,added:Date.now()};
-    S.tracks.push({...rec,url,artUrl:rec.art?URL.createObjectURL(rec.art):null});idbPut(rec);n++;
+    /* cópia simples do arquivo: é o formato que todos os navegadores aceitam guardar */
+    let blob=f;try{blob=new Blob([await f.arrayBuffer()],{type:f.type||'audio/mpeg'})}catch(e){}
+    const rec={id:uid(),title,artist,genre:genreFor(artist,tags.genre),blob,fileName:f.name,art:tags.art||null,artChecked:1,duration,added:Date.now()};
+    S.tracks.push({...rec,url,artUrl:rec.art?URL.createObjectURL(rec.art):null});n++;
+    if(!(await idbPut(rec)))failed++;
     const p=S.playlists.find(p=>p.id===S.view);if(p)p.ids.push(rec.id)}
-  savePL();render();toast(n?`${n} ${n>1?'músicas adicionadas':'música adicionada'}${dup?`, ${dup} já estava${dup>1?'m':''} na biblioteca`:''}`:dup?'Essas músicas já estão na biblioteca':'Nenhum arquivo de áudio encontrado');autoClassify()}
+  savePL();render();toast(n?`${n} ${n>1?'músicas adicionadas':'música adicionada'}${dup?`, ${dup} já estava${dup>1?'m':''} na biblioteca`:''}`:dup?'Essas músicas já estão na biblioteca':'Nenhum arquivo de áudio encontrado');
+  if(failed)setTimeout(()=>toast(`${failed} ${failed>1?'músicas tocam agora mas não foram salvas':'música toca agora mas não foi salva'}: falta espaço ou o navegador está em modo anônimo`),2800);autoClassify()}
 
 /* ---------- faixas de exemplo geradas no navegador ---------- */
 function wav(buf){const ch=buf.getChannelData(0),n=ch.length,ab=new ArrayBuffer(44+n*2),v=new DataView(ab);
@@ -450,7 +458,8 @@ function renderHead(){const p=S.playlists.find(p=>p.id===S.view),g=isG(S.view)?S
   $('#kind').textContent=p?'Playlist':g?'Categoria':ar?'Artista':'Biblioteca';$('#vtitle').textContent=p?p.name:g||ar||'Todas as músicas';
   const ag=ar?[...new Set(ids.map(id=>byId(id).genre||NOGENRE))].join(', '):'';
   $('#vmeta').textContent=`${ids.length} ${ids.length===1?'faixa':'faixas'} · ${Math.floor(tot/60)} min${ag?' · '+ag:''}`;$('#delpl').hidden=!p;
-  $('#playall').hidden=!ids.length}
+  $('#playall').hidden=!ids.length;
+  if(S.view==='all'){const base=$('#vmeta').textContent;storageInfo().then(s=>{if(S.view==='all'&&$('#vmeta').textContent===base)$('#vmeta').textContent=base+s})}}
 
 /* artistas fora da lista embutida: o Claude define a categoria sozinho, sem botão */
 const SKIP=new Set(['Artista desconhecido','Vitrola']);S.asked=new Set();
