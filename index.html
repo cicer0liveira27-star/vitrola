@@ -224,6 +224,7 @@ html,body{overflow-x:hidden}
         <button class="play" id="play" aria-label="Tocar"></button>
         <button class="icon" id="next" aria-label="Próxima"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6v12l8.5-6zM16 6h2v12h-2z"/></svg></button>
         <button class="icon opt" id="rep" aria-pressed="false" aria-label="Repetir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg><span class="badge" id="repb"></span></button>
+        <button class="icon" id="cast" aria-pressed="false" aria-label="Transmitir para outro aparelho" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16a5 5 0 0 1 5 5M2 12a9 9 0 0 1 9 9M2 8.2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M2 20h.01"/></svg></button>
       </div>
       <div class="seek"><span id="cur">0:00</span><input type="range" id="pos" min="0" max="1000" value="0" aria-label="Posição"><span id="tot">0:00</span></div>
     </div>
@@ -441,6 +442,20 @@ function updateNow(){const t=cur();$('#ncover').style.cssText=coverStyle(t);$('#
   document.title=t?`${t.title} · Vitrola`:'Vitrola';
   if(t&&'mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title,artist:t.artist,album:'Vitrola',artwork:t.artUrl?[{src:t.artUrl,type:t.art?.type||'image/jpeg'}]:[]})}catch(e){}}}
 try{navigator.mediaSession.setActionHandler('nexttrack',()=>next());navigator.mediaSession.setActionHandler('previoustrack',prev)}catch(e){}
+
+/* transmitir: AirPlay no Safari, Chromecast e similares no Chrome */
+(()=>{const b=$('#cast');try{audio.setAttribute('x-webkit-airplay','allow')}catch(e){}
+  const mark=on=>{b.setAttribute('aria-pressed',on);b.setAttribute('aria-label',on?'Transmitindo para outro aparelho':'Transmitir para outro aparelho')};
+  if(window.WebKitPlaybackTargetAvailabilityEvent){
+    audio.addEventListener('webkitplaybacktargetavailabilitychanged',e=>{b.hidden=e.availability!=='available'});
+    audio.addEventListener('webkitcurrentplaybacktargetiswirelesschanged',()=>mark(!!audio.webkitCurrentPlaybackTargetIsWireless));
+    b.onclick=()=>{try{audio.webkitShowPlaybackTargetPicker()}catch(e){toast('Não encontrei aparelhos para transmitir nesta rede')}};return}
+  if(audio.remote){const r=audio.remote;
+    r.watchAvailability(a=>{b.hidden=!a}).catch(()=>{b.hidden=false});
+    r.onconnect=()=>{mark(true);toast('Transmitindo para outro aparelho')};r.ondisconnect=()=>{mark(false);toast('Transmissão encerrada')};
+    b.onclick=async()=>{if(!audio.src){const ids=filtered();if(ids.length){playFrom(ids,0);audio.pause()}}
+      try{await r.prompt()}catch(e){if(e&&e.name!=='AbortError')toast(e&&e.name==='NotFoundError'?'Nenhum aparelho encontrado na mesma rede':'Este aparelho não aceitou a música. Tente outro aparelho ou o AirPlay pelo Safari.')}}}
+})();
 $('#play').onclick=toggle;$('#next').onclick=()=>next();$('#prev').onclick=prev;
 $('#shuf').onclick=()=>{S.shuffle=!S.shuffle;$('#shuf').setAttribute('aria-pressed',S.shuffle);
   if(S.queue.length&&S.qi>=0){const c=S.queue[S.qi],rest=S.queue.filter(x=>x!==c);if(S.shuffle)shuffleArr(rest);S.queue=[c,...rest];S.qi=0}toast(S.shuffle?'Aleatório ligado':'Aleatório desligado')};
