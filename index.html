@@ -82,16 +82,16 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .btn.ghost:hover{color:var(--fg)}
 
 .list{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.row{display:grid;grid-template-columns:34px 44px minmax(0,1fr) 56px 96px;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid var(--line)}
+.row{touch-action:manipulation;-webkit-tap-highlight-color:transparent;display:grid;grid-template-columns:34px 44px minmax(0,1fr) 56px 96px;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid var(--line)}
 .row:first-child{border-top:0}
-.row:hover{background:var(--raised)}
+.row:active{background:var(--raised)}
+@media (hover:hover){.row:hover{background:var(--raised)}}
 .row .idx{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 .row .idx button{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;color:var(--fg)}
 .row .idx button svg{width:16px;height:16px}
 .row .idx .num{display:block}
 .row .idx button{display:none}
-.row:hover .idx .num{display:none}
-.row:hover .idx button{display:grid}
+@media (hover:hover){.row:hover .idx .num{display:none}.row:hover .idx button{display:grid}}
 .row.playing .idx .num{display:none}
 .row.playing .idx button{display:grid;color:var(--accent)}
 .cover{width:44px;height:44px;border-radius:6px;flex:none}
@@ -224,7 +224,6 @@ html,body{overflow-x:hidden}
         <button class="play" id="play" aria-label="Tocar"></button>
         <button class="icon" id="next" aria-label="Próxima"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6v12l8.5-6zM16 6h2v12h-2z"/></svg></button>
         <button class="icon opt" id="rep" aria-pressed="false" aria-label="Repetir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg><span class="badge" id="repb"></span></button>
-        <button class="icon" id="cast" aria-pressed="false" aria-label="Transmitir para outro aparelho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16a5 5 0 0 1 5 5M2 12a9 9 0 0 1 9 9M2 8.2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M2 20h.01"/></svg></button>
       </div>
       <div class="seek"><span id="cur">0:00</span><input type="range" id="pos" min="0" max="1000" value="0" aria-label="Posição"><span id="tot">0:00</span></div>
     </div>
@@ -443,21 +442,6 @@ function updateNow(){const t=cur();$('#ncover').style.cssText=coverStyle(t);$('#
   if(t&&'mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title,artist:t.artist,album:'Vitrola',artwork:t.artUrl?[{src:t.artUrl,type:t.art?.type||'image/jpeg'}]:[]})}catch(e){}}}
 try{navigator.mediaSession.setActionHandler('nexttrack',()=>next());navigator.mediaSession.setActionHandler('previoustrack',prev)}catch(e){}
 
-/* transmitir: AirPlay no Safari, Chromecast e similares no Chrome */
-(()=>{const b=$('#cast');try{audio.setAttribute('x-webkit-airplay','allow')}catch(e){}
-  const mark=on=>{b.setAttribute('aria-pressed',on);b.setAttribute('aria-label',on?'Transmitindo para outro aparelho':'Transmitir para outro aparelho')};
-  if(window.WebKitPlaybackTargetAvailabilityEvent){
-    S.castAvail=false;audio.addEventListener('webkitplaybacktargetavailabilitychanged',e=>{S.castAvail=e.availability==='available'});
-    audio.addEventListener('webkitcurrentplaybacktargetiswirelesschanged',()=>mark(!!audio.webkitCurrentPlaybackTargetIsWireless));
-    b.onclick=()=>{if(!audio.src){const ids=filtered();if(ids.length){playFrom(ids,0);audio.pause()}}try{audio.webkitShowPlaybackTargetPicker();if(!S.castAvail)setTimeout(()=>toast('Se nenhum aparelho aparecer, confira se a TV ou caixa com AirPlay está ligada e no mesmo Wi-Fi'),600)}catch(e){toast(castHelp())}};return}
-  if(audio.remote){const r=audio.remote;
-    r.watchAvailability(()=>{}).catch(()=>{});
-    r.onconnect=()=>{mark(true);toast('Transmitindo para outro aparelho')};r.ondisconnect=()=>{mark(false);toast('Transmissão encerrada')};
-    b.onclick=async()=>{if(!audio.src){const ids=filtered();if(ids.length){playFrom(ids,0);audio.pause()}}
-      try{await r.prompt()}catch(e){if(e&&e.name!=='AbortError')toast(e&&e.name==='NotFoundError'?'Nenhum aparelho encontrado no mesmo Wi-Fi. Confira se ele está ligado.':e&&e.name==='NotSupportedError'?castHelp():'Este aparelho não aceitou a música. Tente outro aparelho ou o AirPlay pelo Safari.')}};return}
-  b.onclick=()=>toast(castHelp());
-})();
-function castHelp(){return /iPad|iPhone|iPod/.test(navigator.userAgent)?'Este navegador não transmite. Abra a Vitrola no Safari, ou use a Central de Controle → AirPlay com a música tocando.':'Este navegador não transmite. Use o Chrome (menu ⋮ → Transmitir) ou o Safari no Mac (AirPlay).'}
 $('#play').onclick=toggle;$('#next').onclick=()=>next();$('#prev').onclick=prev;
 $('#shuf').onclick=()=>{S.shuffle=!S.shuffle;$('#shuf').setAttribute('aria-pressed',S.shuffle);
   if(S.queue.length&&S.qi>=0){const c=S.queue[S.qi],rest=S.queue.filter(x=>x!==c);if(S.shuffle)shuffleArr(rest);S.queue=[c,...rest];S.qi=0}toast(S.shuffle?'Aleatório ligado':'Aleatório desligado')};
@@ -510,7 +494,7 @@ function renderList(){const ids=filtered(),c=cur(),inPl=S.playlists.some(p=>p.id
         <button class="icon rm" data-act="rm" aria-label="${inPl?'Tirar da playlist':'Remover da biblioteca'}">${ICON.x}</button></div></div>`}).join('')}
 
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.view=b.dataset.v;render()});
-$('#list').addEventListener('click',e=>{const a=e.target.closest('[data-act]');if(!a)return;const row=a.closest('.row'),id=row.dataset.id;
+$('#list').addEventListener('click',e=>{let a=e.target.closest('[data-act]');if(!a){const row=e.target.closest('.row');if(!row||e.target.closest('.acts'))return;a=row.querySelector('.tinfo')}const row=a.closest('.row'),id=row.dataset.id;
   if(a.dataset.act==='play'){const c=cur();if(c&&c.id===id)toggle();else playFrom(filtered(),+row.dataset.i)}
   else if(a.dataset.act==='add')openPop(a,id);
   else if(a.dataset.act==='genre')openGenre(a,id);
