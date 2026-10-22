@@ -107,6 +107,9 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .empty{padding:40px 20px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:12px}
 .empty strong{color:var(--fg);font-size:16px}
 .note{color:var(--muted);font-size:13px;max-width:62ch}
+.note a{color:inherit}
+.linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
+.linkbtn[hidden]{display:none}
 
 /* Popover */
 .pop{position:fixed;z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;min-width:190px;display:flex;flex-direction:column}
@@ -205,7 +208,8 @@ html,body{overflow-x:hidden}
       </div>
     </div>
     <div class="list" id="list"></div>
-    <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na etiqueta. As músicas ficam salvas neste aparelho e continuam aqui quando você volta, desde que abra sempre pelo mesmo navegador e fora do modo anônimo. Nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca. As três faixas marcadas como exemplo foram geradas aqui mesmo para você testar o player.</p>
+    <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na etiqueta. As músicas ficam salvas neste aparelho e continuam aqui quando você volta, desde que abra sempre pelo mesmo navegador e fora do modo anônimo. Nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca.</p>
+    <p class="note">As faixas marcadas como acervo já vêm com o Vitrola para todo mundo ouvir: são de <a href="https://tannerhelland.com/music" target="_blank" rel="noopener">Tanner Helland</a>, sob a licença <a href="https://creativecommons.org/licenses/by/4.0/deed.pt_BR" target="_blank" rel="noopener">CC BY 4.0</a>, sem alterações (<a href="acervo/CREDITOS.md" target="_blank" rel="noopener">créditos</a>). <button type="button" class="linkbtn" id="acervoBack" hidden>Trazer de volta as faixas do acervo que você tirou</button></p>
   </main>
 </div>
 
@@ -405,6 +409,24 @@ async function addDemos(){if(typeof OfflineAudioContext==='undefined')return;
   for(const d of DEMOS){try{const blob=await synth({...d,dur:20}),url=URL.createObjectURL(blob);
     S.tracks.push({id:'demo-'+hash(d.title),title:d.title,artist:'Vitrola',genre:d.genre,demo:true,url,duration:await getDuration(url)});render()}catch(e){}}}
 
+/* acervo inicial: músicas de Tanner Helland (CC BY 4.0), tocadas direto do site, sem ocupar espaço no aparelho */
+const ACERVO_BY='Tanner Helland';
+const ACERVO=[
+  ['defiance','Defiance','Trilha sonora',165],['syntheticity','Syntheticity','Trilha sonora',205],
+  ['daybreak','Daybreak','Trilha sonora',114],['the-forest-awakes','The Forest Awakes','Trilha sonora',125],
+  ['deserve-to-be-loved','Deserve to be Loved','Trilha sonora',206],['king-of-the-desert','King of the Desert','Trilha sonora',202],
+  ['a-memory-away','A Memory Away','Trilha sonora',126],['find-you','Find You','Trilha sonora',103],
+  ['honky-tonk-villain','Honky-Tonk Villain','Trilha sonora',60],['wild-waters','Wild Waters','Trilha sonora',82],
+  ['home','Home','Trilha sonora',90],['leaving-millie','Leaving Millie (ao vivo)','Piano',153],
+  ['carol-of-the-bells','Carol of the Bells','Natal',130]];
+function acervoPrefs(){try{return JSON.parse(localStorage.getItem('vitrola.acervo'))||{}}catch(e){return{}}}
+function saveAcervo(p){try{localStorage.setItem('vitrola.acervo',JSON.stringify(p))}catch(e){}}
+function addAcervo(){const p=acervoPrefs(),hid=new Set(p.hidden||[]),gs=p.genre||{};
+  for(const [f,title,genre,duration] of ACERVO){const id='acervo-'+f;if(hid.has(id)||S.tracks.some(t=>t.id===id))continue;
+    S.tracks.push({id,title,artist:ACERVO_BY,genre:gs[id]||genre,demo:true,acervo:true,url:'acervo/'+f+'.mp3',duration,added:0})}
+  const b=$('#acervoBack');if(b)b.hidden=!hid.size}
+function restoreAcervo(){const p=acervoPrefs();p.hidden=[];saveAcervo(p);addAcervo();render();toast('Acervo restaurado')}
+
 /* ---------- player ---------- */
 const isG=v=>v.startsWith('g:'),isA=v=>v.startsWith('a:');
 function artists(){const m=new Map();S.tracks.forEach(t=>m.set(t.artist,(m.get(t.artist)||0)+1));return [...m].sort((a,b)=>a[0].localeCompare(b[0],'pt'))}
@@ -516,7 +538,7 @@ function renderList(){const ids=filtered(),c=cur(),inPl=S.playlists.some(p=>p.id
     return `<div class="row${on?' playing':''}" data-id="${id}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><button data-act="play" aria-label="${pl?'Pausar':'Tocar'} ${esc(t.title)}">${pl?ICON.pause:ICON.play}</button></div>
       <div class="cover" style="${coverStyle(t)}"></div>
-      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a">${t.demo?'<span class="tag">Exemplo</span>':''}<span class="alink" data-act="artist">${esc(t.artist)}</span><span class="gtxt">· ${esc(t.genre||NOGENRE)}</span></div></div>
+      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a">${t.demo?`<span class="tag">${t.acervo?'Acervo':'Exemplo'}</span>`:''}<span class="alink" data-act="artist">${esc(t.artist)}</span><span class="gtxt">· ${esc(t.genre||NOGENRE)}</span></div></div>
       <div class="dur">${fmt(t.duration)}</div>
       <div class="acts"><button class="icon" data-act="genre" aria-label="Mudar pasta e categoria">${ICON.tag}</button><button class="icon" data-act="add" aria-label="Adicionar à playlist">${ICON.plus}</button>
         <button class="icon rm" data-act="rm" aria-label="${inPl?'Tirar da playlist':'Remover da biblioteca'}">${ICON.x}</button></div></div>`}).join('')}
@@ -534,8 +556,10 @@ function removeTrack(id){const t=byId(id),p=S.playlists.find(p=>p.id===S.view);i
   const playing=cur()&&cur().id===id;if(playing){audio.pause();audio.removeAttribute('src')}
   S.tracks=S.tracks.filter(x=>x.id!==id);S.playlists.forEach(p=>p.ids=p.ids.filter(x=>x!==id));
   const qi=S.queue.indexOf(id);if(qi>-1){S.queue.splice(qi,1);if(qi<S.qi||playing)S.qi=Math.max(-1,S.qi-1)}if(playing){S.queue=[];S.qi=-1;updateNow();syncPlay()}
+  if(t.acervo){const ap=acervoPrefs();ap.hidden=[...new Set([...(ap.hidden||[]),id])];saveAcervo(ap);const b=$('#acervoBack');if(b)b.hidden=false}
   idbDel(id);savePL();setTimeout(()=>{try{URL.revokeObjectURL(t.url)}catch(e){}},500);render();toast(`"${t.title}" removida`)}
 $('#q').addEventListener('input',e=>{S.q=e.target.value;renderList()});
+$('#acervoBack').addEventListener('click',restoreAcervo);
 $('#files').addEventListener('change',e=>{addFiles([...e.target.files]);e.target.value=''});
 /* lê pastas arrastadas, inclusive as de dentro */
 async function filesFromDrop(dt){const items=[...(dt.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
@@ -570,6 +594,7 @@ function openGenre(btn,id){const t=byId(id),cur=t.genre||NOGENRE;
     '<form id="gform"><input id="gnew" placeholder="Outra categoria" maxlength="30" aria-label="Nova categoria"><button type="submit">OK</button></form>';
   placePop(btn.getBoundingClientRect(),id,'genre')}
 function setGenre(id,g){const t=byId(id);if(!t)return;t.genre=normGenre(g);t.manualGenre=true;
+  if(t.acervo){const ap=acervoPrefs();ap.genre={...(ap.genre||{}),[id]:t.genre};saveAcervo(ap)}
   if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}pop.hidden=true;render();toast(`"${t.title}" agora está em ${t.genre}`)}
 function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)return;t.artist=a;t.manualArtist=true;if(!t.art){delete t.artLink;delete t.album;delete t.storeUrl;t.artLookV=0;setTimeout(artQueue,300)}
   if(!t.manualGenre)t.genre=knownGenre(a)||t.genre;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}
@@ -594,11 +619,11 @@ addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=t
 
 /* início */
 (async()=>{S.playlists=loadPL();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
-  syncPlay();updateNow();render();
+  syncPlay();updateNow();addAcervo();render();
   const saved=await idbAll();saved.sort((a,b)=>a.added-b.added).forEach(r=>{try{if(!r.manualArtist){const m=fixMeta(r.artist,r.title);if(m.artist!==r.artist||m.title!==r.title){r.artist=m.artist;r.title=m.title;r.fixed=1}}
   const g=r.manualGenre?r.genre:(knownGenre(r.artist)||r.genre||NOGENRE);if(g!==r.genre){r.genre=g;r.fixed=1}if(r.fixed){delete r.fixed;idbPut(r)}
   S.tracks.push({...r,genre:g,url:r.link||URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):null})}catch(e){}});
-  render();autoClassify();if(!saved.length)addDemos();
+  render();autoClassify();
   artQueue();
   /* capa do álbum gravada nos arquivos já adicionados antes */
   for(const t of S.tracks.filter(t=>!t.demo&&!t.artChecked&&t.blob)){const tags=await readTags(t.blob);t.artChecked=1;
