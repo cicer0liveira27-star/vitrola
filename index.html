@@ -629,7 +629,7 @@ if('serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceW
 addEventListener('offline',()=>toast('Sem internet: suas músicas e o acervo continuam tocando'));
 addEventListener('online',()=>{toast('Internet de volta');artQueue()});
 /* limpa o que ficou da ligação com o TIDAL, que foi removida */
-try{for(const k of Object.keys(localStorage))if(/^vitrola[.-]tidal/i.test(k))localStorage.removeItem(k);
+try{for(const k of Object.keys(localStorage))if(/vitrola[.-]tidal/i.test(k))localStorage.removeItem(k);
   const pl=JSON.parse(localStorage.getItem('vitrola.playlists'))||[];if(pl.some(p=>p.ids.some(i=>String(i).startsWith('td-')))){pl.forEach(p=>p.ids=p.ids.filter(i=>!String(i).startsWith('td-')));localStorage.setItem('vitrola.playlists',JSON.stringify(pl))}}catch(e){}
 
 /* início */
