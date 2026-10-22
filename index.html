@@ -308,7 +308,7 @@ const fmt=s=>{if(!isFinite(s)||s<0)s=0;const m=Math.floor(s/60),x=Math.floor(s%6
 const uid=()=>'t'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const byId=id=>S.tracks.find(t=>t.id===id);
 function hash(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))|0;return Math.abs(h)}
-function coverStyle(t){if(!t)return'background:var(--line)';checkArt(t);const au=t.artUrl||t.artLink;if(au)return`background:var(--line) center/cover no-repeat url("${au}")`;const h=hash(t.title+t.artist),a=h%360,b=(a+40+(h>>8)%80)%360;
+function coverStyle(t){if(!t)return'background:var(--line)';checkArt(t);const au=t.artUrl||t.artLink;if(au)return`background:var(--line) center/cover no-repeat url('${String(au).replace(/'/g,'%27').replace(/"/g,'%22')}')`;const h=hash(t.title+t.artist),a=h%360,b=(a+40+(h>>8)%80)%360;
   return `background:radial-gradient(circle at ${20+h%60}% ${30+(h>>4)%50}%,hsl(0 0% ${55+h%30}%),transparent 60%),linear-gradient(135deg,hsl(0 0% ${22+(h>>3)%14}%),hsl(0 0% ${8+(h>>5)%8}%))`}
 const UNKNOWN='Artista desconhecido';
 /* nome do arquivo: tira número da faixa e textos de vídeo, separa "Artista - Título" */
