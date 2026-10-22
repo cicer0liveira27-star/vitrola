@@ -443,17 +443,24 @@ try{navigator.mediaSession.setActionHandler('nexttrack',()=>next());navigator.me
 
 /* capa do álbum pela busca oficial do iTunes: só para faixas sem capa no arquivo */
 const artBusy=new Set();let artRunning=false;
+/* o iTunes recomenda este formato para páginas web: a resposta chega como script */
+function jsonp(url){return new Promise((res,rej)=>{const cb='vitrolaCb'+Math.random().toString(36).slice(2);const sc=document.createElement('script');
+  const done=()=>{clearTimeout(to);try{delete window[cb]}catch(e){window[cb]=undefined}sc.remove()};
+  const to=setTimeout(()=>{done();rej(new Error('timeout'))},9000);
+  window[cb]=d=>{done();res(d)};sc.onerror=()=>{done();rej(new Error('net'))};sc.src=url+'&callback='+cb;document.head.appendChild(sc)})}
 async function findArt(t){const q=encodeURIComponent(`${t.artist===UNKNOWN?'':t.artist} ${t.title}`.trim());
-  const r=await fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=10&country=BR`);if(!r.ok)throw new Error('http');
-  const {results=[]}=await r.json();const ka=keyA(t.artist),kt=keyT(t.title);
+  const url=`https://itunes.apple.com/search?term=${q}&entity=song&limit=10&country=BR`;
+  let data=null;try{const r=await fetch(url);if(r.ok)data=await r.json()}catch(e){}
+  if(!data)data=await jsonp(url);
+  const results=(data&&data.results)||[];const ka=keyA(t.artist),kt=keyT(t.title);
   const score=x=>(keyA(x.artistName||'').includes(ka)||ka.includes(keyA(x.artistName||''))?2:0)+(keyT(x.trackName||'')===kt?2:keyT(x.trackName||'').startsWith(kt)?1:0)+(/single|ep$/i.test(x.collectionName||'')?0:0.5);
   const best=results.filter(x=>x.artworkUrl100).sort((a,b)=>score(b)-score(a))[0];
   if(!best||score(best)<3)return null;
   return{artLink:best.artworkUrl100.replace(/\/\d+x\d+bb\./,'/600x600bb.'),album:(best.collectionName||'').replace(/\s*-\s*(single|ep)$/i,''),storeUrl:best.trackViewUrl||best.collectionViewUrl||''}}
-async function artQueue(){if(artRunning)return;artRunning=true;
+async function artQueue(){if(artRunning)return;artRunning=true;let fails=0;
   try{for(const t of S.tracks.filter(t=>!t.demo&&!t.art&&!t.artLink&&!t.artLooked&&!artBusy.has(t.id))){artBusy.add(t.id);
-      try{const f=await findArt(t);t.artLooked=1;if(f){Object.assign(t,f);render();if(cur()===t)updateNow()}
-        if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}}catch(e){artBusy.delete(t.id);break}
+      try{const f=await findArt(t);fails=0;t.artLooked=1;if(f){Object.assign(t,f);render();if(cur()===t)updateNow()}
+        if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}}catch(e){artBusy.delete(t.id);if(++fails>=3)break}
       await new Promise(r=>setTimeout(r,350))}}
   finally{artRunning=false}}
 $('#play').onclick=toggle;$('#next').onclick=()=>next();$('#prev').onclick=prev;
