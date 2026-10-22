@@ -1,6 +1,6 @@
 # Vitrola
 
-**▶ Abrir o Vitrola: [ciceroav-silva.github.io/vitrola](https://cicer0liveira27-star.github.io/vitrola/)**
+**▶ Abrir o Vitrola: [ciceroav-silva.github.io/vitrola](https://ciceroav-silva.github.io/vitrola/)**
 
 Player de música que toca os arquivos de áudio do próprio aparelho, com pastas por artista, categorias por gênero, capas, playlists e fila.
 
