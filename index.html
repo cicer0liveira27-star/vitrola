@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Vitrola">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>:root{color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Vitrola</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -95,6 +98,8 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .tinfo{min-width:0;cursor:pointer}
 .tinfo .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row.playing{background:var(--raised)}
+.row.off{opacity:.45}
+.icon.on{color:var(--accent)}
 .row.playing .tinfo .t{color:var(--fg);font-weight:700}
 .tinfo .a{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;gap:6px;align-items:center}
 .tag{font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;padding:1px 6px;border-radius:4px;background:var(--accent-soft);color:var(--muted);flex:none}
@@ -210,6 +215,7 @@ html,body{overflow-x:hidden}
     </div>
     <div class="list" id="list"></div>
     <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na etiqueta. As músicas ficam salvas neste aparelho e continuam aqui quando você volta, desde que abra sempre pelo mesmo navegador e fora do modo anônimo. Nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca.</p>
+    <p class="note">O Vitrola funciona sem internet: as músicas que você adicionou do aparelho e o acervo continuam tocando. As faixas do TIDAL salvas no catálogo entram nas pastas e categorias, mas tocam só com internet, direto do TIDAL.</p>
     <p class="note">As faixas marcadas como acervo já vêm com o Vitrola para todo mundo ouvir: são de <a href="https://tannerhelland.com/music" target="_blank" rel="noopener">Tanner Helland</a>, sob a licença <a href="https://creativecommons.org/licenses/by/4.0/deed.pt_BR" target="_blank" rel="noopener">CC BY 4.0</a>, sem alterações (<a href="acervo/CREDITOS.md" target="_blank" rel="noopener">créditos</a>). <button type="button" class="linkbtn" id="acervoBack" hidden>Trazer de volta as faixas do acervo que você tirou</button></p>
   </main>
 </div>
@@ -247,6 +253,8 @@ const ICON={
   pause:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  save:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M12 7v6M9 10h6"/></svg>',
+  saved:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
   tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="8" cy="8" r="1.5"/></svg>'
 };
 const NOGENRE='Sem categoria';
@@ -362,6 +370,14 @@ function savePL(){try{localStorage.setItem('vitrola.playlists',JSON.stringify(S.
 /* faixas do TIDAL guardadas em playlists: só os dados para mostrar (título, artista, capa), nunca o áudio */
 function saveTidal(){try{const ids=new Set(S.playlists.flatMap(p=>p.ids).filter(i=>i.startsWith('td-')));
   localStorage.setItem('vitrola.tidal.saved',JSON.stringify([...ids].map(i=>T.cache.get(i)).filter(Boolean).map(({id,tidalId,title,artist,album,artLink,storeUrl,duration})=>({id,tidalId,title,artist,album,artLink,storeUrl,duration}))))}catch(e){}}
+/* faixas do TIDAL salvas no catálogo: entram nas pastas por artista e nas categorias (o áudio continua vindo do TIDAL) */
+function saveLib(){try{localStorage.setItem('vitrola.tidal.lib',JSON.stringify(S.tracks.filter(t=>t.tidal).map(({id,tidalId,title,artist,album,artLink,storeUrl,duration,genre,manualGenre,manualArtist,added})=>({id,tidalId,title,artist,album,artLink,storeUrl,duration,genre,manualGenre,manualArtist,added}))))}catch(e){}}
+function loadLib(){try{for(const r of JSON.parse(localStorage.getItem('vitrola.tidal.lib'))||[]){const t={...r,tidal:true,demo:true,genre:r.manualGenre?r.genre:(knownGenre(r.artist)||r.genre||NOGENRE)};
+  T.cache.set(t.id,t);if(!S.tracks.some(x=>x.id===t.id))S.tracks.push(t)}}catch(e){}}
+function toggleLib(id){const t=byId(id);if(!t||!t.tidal)return;
+  if(S.tracks.includes(t)){S.armed=null;removeTrack(id,true);return}
+  t.added=Date.now();if(!t.manualGenre)t.genre=knownGenre(t.artist)||NOGENRE;S.tracks.push(t);saveLib();render();
+  toast(`"${t.title}" salva no catálogo, na pasta ${t.artist}`);autoClassify()}
 function loadTidal(){try{for(const r of JSON.parse(localStorage.getItem('vitrola.tidal.saved'))||[])T.cache.set(r.id,{...r,tidal:true,demo:true,genre:'TIDAL'})}catch(e){}}
 const dbp=new Promise(res=>{try{const r=indexedDB.open('vitrola',1);r.onupgradeneeded=()=>r.result.createObjectStore('tracks',{keyPath:'id'});
   r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}catch(e){res(null)}});
@@ -455,6 +471,8 @@ function filtered(){if(S.view==='tidal')return viewIds();const q=S.q.trim().toLo
 function playFrom(ids,i){S.queue=ids.slice();if(S.shuffle){const f=S.queue.splice(i,1)[0];shuffleArr(S.queue);S.queue.unshift(f);i=0}S.qi=i;load()}
 function cur(){return byId(S.queue[S.qi])}
 function load(){const t=cur();if(!t){updateNow();return}
+  if(t.tidal&&!navigator.onLine){audio.pause();if(T.P&&T.state!=='IDLE')T.P.pause();T.state='IDLE';
+    toast('Sem internet: as faixas do TIDAL precisam de conexão. Suas músicas e o acervo tocam normalmente');updateNow();renderList();tick();return}
   if(t.tidal){audio.pause();audio.removeAttribute('src');tidalPlay(t)}
   else{if(T.P&&T.state!=='IDLE'){T.P.pause();T.state='IDLE'}audio.src=t.url;audio.play().catch(()=>{})}
   updateNow();renderList();tick()}
@@ -502,6 +520,8 @@ async function tidalLogout(){try{const a=await tidalAuth();await a.logout()}catc
 async function tidalBoot(){const qs=new URLSearchParams(location.search),back=qs.has('code')||qs.has('error');
   let flag=false;try{flag=!!localStorage.getItem('vitrola.tidal.on')}catch(e){}
   if(!back&&!flag)return;
+  /* sem internet: mantém a conta conectada e só não busca agora */
+  if(!navigator.onLine&&!back){T.on=true;render();return}
   try{const a=await tidalAuth();
     if(qs.has('code'))await a.finalizeLogin(location.search);
     const c=await a.credentialsProvider.getCredentials();T.on=!!(c&&c.token&&c.userId)}
@@ -542,7 +562,7 @@ function queueSearch(){clearTimeout(searchT);const q=S.q.trim();if(!q){T.res=[];
   T.searching=true;renderList();searchT=setTimeout(async()=>{const n=++searchN;
     try{const r=await tidalSearch(q);if(n!==searchN)return;T.res=r.map(t=>t.id);T.err=''}
     catch(e){if(n!==searchN)return;console.error(e);T.res=[];
-      T.err=e.status===401?'Sua sessão do TIDAL expirou. Conecte de novo.':e.status===429?'Muitas buscas seguidas. Espere alguns segundos.':'A busca no TIDAL falhou. Tente de novo.';
+      T.err=!navigator.onLine?'Sem internet: a busca no TIDAL volta quando a conexão voltar.':e.status===401?'Sua sessão do TIDAL expirou. Conecte de novo.':e.status===429?'Muitas buscas seguidas. Espere alguns segundos.':'A busca no TIDAL falhou. Tente de novo.';
       if(e.status===401){T.on=false;try{localStorage.removeItem('vitrola.tidal.on')}catch(x){}renderNav()}}
     T.searching=false;renderHead();renderList()},450)}
 /* player oficial do TIDAL: carregado só quando a primeira faixa do TIDAL toca */
@@ -572,7 +592,8 @@ const artBusy=new Set();let artRunning=false;
 /* confere se a capa abre de verdade; se estiver quebrada, busca outra */
 function checkArt(t){const src=t.artUrl||t.artLink;if(!src||t.artOk===src||t.artChk===src)return;t.artChk=src;const img=new Image();
   img.onload=()=>{t.artOk=src};
-  img.onerror=()=>{if(t.artUrl===src){try{URL.revokeObjectURL(src)}catch(e){}t.artUrl=null;t.art=null}else{t.artLink=null;t.album=null;t.storeUrl=null}
+  img.onerror=()=>{if(!navigator.onLine&&t.artUrl!==src){t.artChk=null;return}/* sem internet a capa só não carrega agora: não apaga */
+    if(t.artUrl===src){try{URL.revokeObjectURL(src)}catch(e){}t.artUrl=null;t.art=null}else{t.artLink=null;t.album=null;t.storeUrl=null}
     t.artLookV=0;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}render();if(cur()===t)updateNow();setTimeout(artQueue,200)};
   img.src=src}
 /* o iTunes recomenda este formato para páginas web: a resposta chega como script */
@@ -633,6 +654,7 @@ async function autoClassify(){if(!S.sample||S.classifying)return;const list=clas
   try{const res=await S.sample.json(`Você classifica artistas musicais pelo gênero principal pelo qual são conhecidos. Para cada artista da lista, dê um gênero em português do Brasil, usando de preferência uma destas categorias: ${PRESETS.join(', ')}. Use outra categoria curta só se nenhuma servir. Se não reconhecer o artista com segurança, use "${NOGENRE}". Responda só com um objeto JSON no formato {"Nome do artista exatamente como veio": "Categoria"}.\n\nArtistas:\n${list.map(a=>'- '+a).join('\n')}`,{modelTier:'quick'});
     let n=0;for(const a of list){const g=res&&typeof res[a]==='string'?normGenre(res[a]):null;if(!g||g===NOGENRE)continue;
       S.tracks.filter(t=>t.artist===a).forEach(t=>{t.genre=g;n++;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}})}
+    saveLib();
     if(n)toast(`${n} ${n>1?'faixas separadas':'faixa separada'} por categoria`)}
   catch(e){if(e&&['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'].includes(e.code))S.sample=null;
     if(e&&['rate_limited','upstream_error'].includes(e.code))list.forEach(a=>S.asked.delete(a))}
@@ -646,13 +668,15 @@ function renderList(){const ids=filtered(),c=cur(),inPl=S.playlists.some(p=>p.id
   if(!ids.length){$('#list').innerHTML=`<div class="empty"><strong>${S.q?'Nada encontrado':inPl?'Playlist vazia':'Sua biblioteca está vazia'}</strong>
     <span>${S.q?'Tente outro termo de busca.':inPl?'Use o botão + ao lado de uma faixa em "Todas as músicas" para incluí-la aqui.':'Adicione arquivos MP3, M4A, WAV, OGG ou FLAC do seu aparelho.'}</span></div>`;return}
   $('#list').innerHTML=ids.map((id,i)=>{const t=byId(id),on=c&&c.id===id,pl=on&&!E.paused();
-    if(t.tidal)return `<div class="row${on?' playing':''}" data-id="${id}" data-i="${i}">
+    if(t.tidal){const inLib=S.tracks.includes(t),tv=S.view==='tidal',off=!navigator.onLine;
+      return `<div class="row${on?' playing':''}${off?' off':''}" data-id="${id}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><button data-act="play" aria-label="${pl?'Pausar':'Tocar'} ${esc(t.title)}">${pl?ICON.pause:ICON.play}</button></div>
       <div class="cover" style="${coverStyle(t)}"></div>
-      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a"><span class="tag">TIDAL</span><span class="alink">${esc(t.artist)}</span>${t.album?`<span class="gtxt">· ${esc(t.album)}</span>`:''}</div></div>
+      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a"><span class="tag">TIDAL</span><span class="alink"${inLib?' data-act="artist"':''}>${esc(t.artist)}</span><span class="gtxt">· ${esc(tv?(t.album||''):(t.genre||NOGENRE))}</span></div></div>
       <div class="dur">${fmt(t.duration)}</div>
-      <div class="acts"><button class="icon" data-act="add" aria-label="Adicionar à playlist">${ICON.plus}</button>
-        ${inPl?`<button class="icon rm" data-act="rm" aria-label="Tirar da playlist">${ICON.x}</button>`:''}</div></div>`;
+      <div class="acts">${tv?`<button class="icon${inLib?' on':''}" data-act="save" aria-label="${inLib?'Tirar do catálogo':'Salvar no catálogo'}" title="${inLib?'No seu catálogo':'Salvar no catálogo'}">${inLib?ICON.saved:ICON.save}</button>`
+          :`<button class="icon" data-act="genre" aria-label="Mudar pasta e categoria">${ICON.tag}</button>`}<button class="icon" data-act="add" aria-label="Adicionar à playlist">${ICON.plus}</button>
+        ${inPl||(!tv&&inLib)?`<button class="icon rm" data-act="rm" aria-label="${inPl?'Tirar da playlist':'Tirar do catálogo'}">${ICON.x}</button>`:''}</div></div>`}
     return `<div class="row${on?' playing':''}" data-id="${id}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><button data-act="play" aria-label="${pl?'Pausar':'Tocar'} ${esc(t.title)}">${pl?ICON.pause:ICON.play}</button></div>
       <div class="cover" style="${coverStyle(t)}"></div>
@@ -667,14 +691,16 @@ $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)
 $('#tout').onclick=tidalLogout;
 $('#list').addEventListener('click',e=>{let a=e.target.closest('[data-act]');if(!a){const row=e.target.closest('.row');if(!row||e.target.closest('.acts'))return;a=row.querySelector('.tinfo')}const row=a.closest('.row'),id=row.dataset.id;
   if(a.dataset.act==='play'){const c=cur();if(c&&c.id===id)toggle();else playFrom(filtered(),+row.dataset.i)}
+  else if(a.dataset.act==='save')toggleLib(id);
   else if(a.dataset.act==='add')openPop(a,id);
   else if(a.dataset.act==='genre')openGenre(a,id);
   else if(a.dataset.act==='artist'){S.view='a:'+byId(id).artist;S.q='';$('#q').value='';render();scrollTo({top:0})}
   else if(a.dataset.act==='rm'){
     if(S.armed===id&&Date.now()-S.armedAt<4000){S.armed=null;removeTrack(id)}
     else{S.armed=id;S.armedAt=Date.now();const inPl=S.playlists.some(p=>p.id===S.view);toast(inPl?'Toque no X de novo para tirar da playlist':'Toque no X de novo para excluir a música')}}});
-function removeTrack(id){const t=byId(id),p=S.playlists.find(p=>p.id===S.view);if(p){p.ids=p.ids.filter(x=>x!==id);savePL();render();toast('Tirada da playlist');return}
-  if(!t||t.tidal)return;
+function removeTrack(id,fromLib){const t=byId(id),p=fromLib?null:S.playlists.find(p=>p.id===S.view);if(p){p.ids=p.ids.filter(x=>x!==id);savePL();render();toast('Tirada da playlist');return}
+  if(!t)return;
+  if(t.tidal){if(!S.tracks.includes(t))return;S.tracks=S.tracks.filter(x=>x!==t);saveLib();render();toast(`"${t.title}" saiu do catálogo`);return}
   const playing=cur()&&cur().id===id;if(playing){audio.pause();audio.removeAttribute('src')}
   S.tracks=S.tracks.filter(x=>x.id!==id);S.playlists.forEach(p=>p.ids=p.ids.filter(x=>x!==id));
   const qi=S.queue.indexOf(id);if(qi>-1){S.queue.splice(qi,1);if(qi<S.qi||playing)S.qi=Math.max(-1,S.qi-1)}if(playing){S.queue=[];S.qi=-1;updateNow();syncPlay()}
@@ -715,10 +741,10 @@ function openGenre(btn,id){const t=byId(id),cur=t.genre||NOGENRE;
     `<button data-g="${NOGENRE}" class="${cur===NOGENRE?'sel':''}"><span class="gdot" style="background:${gColor(NOGENRE)}"></span>${NOGENRE}</button></div>`+
     '<form id="gform"><input id="gnew" placeholder="Outra categoria" maxlength="30" aria-label="Nova categoria"><button type="submit">OK</button></form>';
   placePop(btn.getBoundingClientRect(),id,'genre')}
-function setGenre(id,g){const t=byId(id);if(!t)return;t.genre=normGenre(g);t.manualGenre=true;
+function setGenre(id,g){const t=byId(id);if(!t)return;t.genre=normGenre(g);t.manualGenre=true;if(t.tidal)saveLib();
   if(t.acervo){const ap=acervoPrefs();ap.genre={...(ap.genre||{}),[id]:t.genre};saveAcervo(ap)}
   if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}pop.hidden=true;render();toast(`"${t.title}" agora está em ${t.genre}`)}
-function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)return;t.artist=a;t.manualArtist=true;if(!t.art){delete t.artLink;delete t.album;delete t.storeUrl;t.artLookV=0;setTimeout(artQueue,300)}
+function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)return;t.artist=a;t.manualArtist=true;if(t.tidal)setTimeout(saveLib,0);if(!t.art&&!t.tidal){delete t.artLink;delete t.album;delete t.storeUrl;t.artLookV=0;setTimeout(artQueue,300)}
   if(!t.manualGenre)t.genre=knownGenre(a)||t.genre;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}
   pop.hidden=true;render();toast(`"${t.title}" movida para a pasta ${a}`);autoClassify()}
 pop.addEventListener('submit',e=>{e.preventDefault();
@@ -739,8 +765,15 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=true;if(!e.dataTransfer)return;
   let list=[];try{list=await filesFromDrop(e.dataTransfer)}catch(err){list=[...(e.dataTransfer.files||[])]}if(list.length)addFiles(list)});
 
+/* sem internet: o app, a biblioteca do aparelho e o acervo ficam guardados */
+if('serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(reg=>{
+  const warm=()=>{const w=reg.active||navigator.serviceWorker.controller;if(w&&!(navigator.connection&&navigator.connection.saveData))w.postMessage({type:'cache-acervo'})};
+  setTimeout(warm,8000)}).catch(()=>{})})}
+addEventListener('offline',()=>{toast('Sem internet: suas músicas e o acervo continuam tocando');renderList()});
+addEventListener('online',()=>{toast('Internet de volta');if(S.view==='tidal'&&S.q.trim())queueSearch();artQueue()});
+
 /* início */
-(async()=>{S.playlists=loadPL();loadTidal();tidalBoot();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
+(async()=>{S.playlists=loadPL();loadTidal();loadLib();tidalBoot();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
   syncPlay();updateNow();addAcervo();render();
   const saved=await idbAll();saved.sort((a,b)=>a.added-b.added).forEach(r=>{try{if(!r.manualArtist){const m=fixMeta(r.artist,r.title);if(m.artist!==r.artist||m.title!==r.title){r.artist=m.artist;r.title=m.title;r.fixed=1}}
   const g=r.manualGenre?r.genre:(knownGenre(r.artist)||r.genre||NOGENRE);if(g!==r.genre){r.genre=g;r.fixed=1}if(r.fixed){delete r.fixed;idbPut(r)}
