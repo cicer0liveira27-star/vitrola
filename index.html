@@ -442,12 +442,13 @@ try{navigator.mediaSession.setActionHandler('nexttrack',()=>next());navigator.me
 
 
 /* capa do álbum pela busca oficial do iTunes: só para faixas sem capa no arquivo */
+const ART_V=2;/* aumentar este número numa atualização faz o app procurar de novo as capas que faltam */
 const artBusy=new Set();let artRunning=false;
 /* confere se a capa abre de verdade; se estiver quebrada, busca outra */
 function checkArt(t){const src=t.artUrl||t.artLink;if(!src||t.artOk===src||t.artChk===src)return;t.artChk=src;const img=new Image();
   img.onload=()=>{t.artOk=src};
   img.onerror=()=>{if(t.artUrl===src){try{URL.revokeObjectURL(src)}catch(e){}t.artUrl=null;t.art=null}else{t.artLink=null;t.album=null;t.storeUrl=null}
-    t.artLooked=0;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}render();if(cur()===t)updateNow();setTimeout(artQueue,200)};
+    t.artLookV=0;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}render();if(cur()===t)updateNow();setTimeout(artQueue,200)};
   img.src=src}
 /* o iTunes recomenda este formato para páginas web: a resposta chega como script */
 function jsonp(url){return new Promise((res,rej)=>{const cb='vitrolaCb'+Math.random().toString(36).slice(2);const sc=document.createElement('script');
@@ -464,8 +465,8 @@ async function findArt(t){const q=encodeURIComponent(`${t.artist===UNKNOWN?'':t.
   if(!best||score(best)<3)return null;
   return{artLink:best.artworkUrl100.replace(/\/\d+x\d+bb\./,'/600x600bb.'),album:(best.collectionName||'').replace(/\s*-\s*(single|ep)$/i,''),storeUrl:best.trackViewUrl||best.collectionViewUrl||''}}
 async function artQueue(){if(artRunning)return;artRunning=true;let fails=0;
-  try{for(const t of S.tracks.filter(t=>!t.demo&&!t.art&&!t.artLink&&!t.artLooked&&!artBusy.has(t.id))){artBusy.add(t.id);
-      try{const f=await findArt(t);fails=0;t.artLooked=1;if(f){Object.assign(t,f);render();if(cur()===t)updateNow()}
+  try{for(const t of S.tracks.filter(t=>!t.demo&&!t.art&&!t.artLink&&t.artLookV!==ART_V&&!artBusy.has(t.id))){artBusy.add(t.id);
+      try{const f=await findArt(t);fails=0;t.artLookV=ART_V;if(f){Object.assign(t,f);render();if(cur()===t)updateNow()}
         if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}}catch(e){artBusy.delete(t.id);if(++fails>=3)break}
       await new Promise(r=>setTimeout(r,350))}}
   finally{artRunning=false}}
@@ -570,7 +571,7 @@ function openGenre(btn,id){const t=byId(id),cur=t.genre||NOGENRE;
   placePop(btn.getBoundingClientRect(),id,'genre')}
 function setGenre(id,g){const t=byId(id);if(!t)return;t.genre=normGenre(g);t.manualGenre=true;
   if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}pop.hidden=true;render();toast(`"${t.title}" agora está em ${t.genre}`)}
-function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)return;t.artist=a;t.manualArtist=true;if(!t.art){delete t.artLink;delete t.album;delete t.storeUrl;t.artLooked=0;setTimeout(artQueue,300)}
+function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)return;t.artist=a;t.manualArtist=true;if(!t.art){delete t.artLink;delete t.album;delete t.storeUrl;t.artLookV=0;setTimeout(artQueue,300)}
   if(!t.manualGenre)t.genre=knownGenre(a)||t.genre;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}
   pop.hidden=true;render();toast(`"${t.title}" movida para a pasta ${a}`);autoClassify()}
 pop.addEventListener('submit',e=>{e.preventDefault();
