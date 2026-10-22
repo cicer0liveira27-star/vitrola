@@ -1,6 +1,6 @@
 /* Vitrola: guarda o app, as bibliotecas e o acervo para funcionar sem internet */
 const SHELL = 'vitrola-shell-v1';
-const LIBS = 'vitrola-libs-v1';
+const LIBS = 'vitrola-libs-v2';
 const ACERVO = 'vitrola-acervo-v1';
 const KEEP = [SHELL, LIBS, ACERVO];
 const SHELL_FILES = ['./', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './acervo/CREDITOS.md'];
@@ -109,8 +109,8 @@ self.addEventListener('fetch', e => {
     if (url.pathname.includes('/acervo/') && url.pathname.endsWith('.mp3')) return e.respondWith(acervo(req));
     return e.respondWith(cacheFirst(SHELL, req));
   }
-  /* fontes e o código do player do TIDAL (versões fixas): guardados depois da primeira vez */
-  if (url.hostname === 'fonts.gstatic.com' || url.hostname === 'esm.sh') return e.respondWith(cacheFirst(LIBS, req));
+  /* fontes: guardadas depois da primeira vez */
+  if (url.hostname === 'fonts.gstatic.com') return e.respondWith(cacheFirst(LIBS, req));
   if (url.hostname === 'fonts.googleapis.com') return e.respondWith(staleWhileRevalidate(LIBS, req));
-  /* o resto (TIDAL, capas, busca) vai direto para a internet */
+  /* o resto (capas, busca de capas) vai direto para a internet */
 });

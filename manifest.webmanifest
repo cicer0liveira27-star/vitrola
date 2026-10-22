@@ -1,7 +1,7 @@
 {
   "name": "Vitrola",
   "short_name": "Vitrola",
-  "description": "Player de música com a sua biblioteca, o acervo e o catálogo do TIDAL.",
+  "description": "Player de música com a sua biblioteca e o acervo, funcionando sem internet.",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",
