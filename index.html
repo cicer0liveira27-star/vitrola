@@ -200,7 +200,8 @@ html,body{overflow-x:hidden}
         <input class="search" id="q" type="search" placeholder="Buscar faixa ou artista" aria-label="Buscar">
         <button class="btn ghost" id="delpl" hidden>Excluir playlist</button>
         <button class="btn" id="playall" hidden><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Tocar tudo</button>
-        <label class="btn primary" for="files">
+        <button class="btn ghost" id="tout" hidden>Sair do TIDAL</button>
+        <label class="btn primary" for="files" id="addlbl">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           Adicionar músicas
         </label>
@@ -305,12 +306,23 @@ async function readTags(file){try{
   return out}catch(e){return{}}}
 const S={tracks:[],playlists:[],view:'all',queue:[],qi:-1,shuffle:false,repeat:'off',q:''};
 const audio=new Audio(); audio.preload='metadata';
+/* TIDAL: login com a conta da pessoa, busca no catálogo e player oficial do TIDAL */
+const T={on:false,auth:null,P:null,cache:new Map(),res:[],state:'IDLE',pos:0,dur:0,preview:false,cc:null,searching:false,err:''};
+/* motor de som: arquivos e acervo tocam no <audio>; faixas do TIDAL no player do TIDAL */
+const E={
+  tidal(){const t=cur();return !!(t&&t.tidal)},
+  paused(){return this.tidal()?!(T.state==='PLAYING'||T.state==='STALLED'):audio.paused},
+  time(){return this.tidal()?T.pos:audio.currentTime},
+  dur(){const t=cur();return this.tidal()?(T.dur||(t&&t.duration)||0):(audio.duration||0)},
+  seek(s){if(this.tidal()){T.pos=s;if(T.P)T.P.seek(s).catch(()=>{})}else audio.currentTime=s},
+  play(){if(this.tidal()){if(T.P)T.P.play().catch(tErr)}else audio.play().catch(()=>{})},
+  pause(){if(this.tidal()){if(T.P)T.P.pause()}else audio.pause()}};
 
 /* ---------- utilidades ---------- */
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=s=>{if(!isFinite(s)||s<0)s=0;const m=Math.floor(s/60),x=Math.floor(s%60);return m+':'+String(x).padStart(2,'0')};
 const uid=()=>'t'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const byId=id=>S.tracks.find(t=>t.id===id);
+const byId=id=>S.tracks.find(t=>t.id===id)||T.cache.get(id);
 function hash(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))|0;return Math.abs(h)}
 function coverStyle(t){if(!t)return'background:var(--line)';checkArt(t);const au=t.artUrl||t.artLink;if(au)return`background:var(--line) center/cover no-repeat url('${String(au).replace(/'/g,'%27').replace(/"/g,'%22')}')`;const h=hash(t.title+t.artist),a=h%360,b=(a+40+(h>>8)%80)%360;
   return `background:radial-gradient(circle at ${20+h%60}% ${30+(h>>4)%50}%,hsl(0 0% ${55+h%30}%),transparent 60%),linear-gradient(135deg,hsl(0 0% ${22+(h>>3)%14}%),hsl(0 0% ${8+(h>>5)%8}%))`}
@@ -346,7 +358,11 @@ let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;
 
 /* ---------- armazenamento ---------- */
 function loadPL(){try{return JSON.parse(localStorage.getItem('vitrola.playlists'))||[]}catch(e){return[]}}
-function savePL(){try{localStorage.setItem('vitrola.playlists',JSON.stringify(S.playlists))}catch(e){}}
+function savePL(){try{localStorage.setItem('vitrola.playlists',JSON.stringify(S.playlists))}catch(e){}saveTidal()}
+/* faixas do TIDAL guardadas em playlists: só os dados para mostrar (título, artista, capa), nunca o áudio */
+function saveTidal(){try{const ids=new Set(S.playlists.flatMap(p=>p.ids).filter(i=>i.startsWith('td-')));
+  localStorage.setItem('vitrola.tidal.saved',JSON.stringify([...ids].map(i=>T.cache.get(i)).filter(Boolean).map(({id,tidalId,title,artist,album,artLink,storeUrl,duration})=>({id,tidalId,title,artist,album,artLink,storeUrl,duration}))))}catch(e){}}
+function loadTidal(){try{for(const r of JSON.parse(localStorage.getItem('vitrola.tidal.saved'))||[])T.cache.set(r.id,{...r,tidal:true,demo:true,genre:'TIDAL'})}catch(e){}}
 const dbp=new Promise(res=>{try{const r=indexedDB.open('vitrola',1);r.onupgradeneeded=()=>r.result.createObjectStore('tracks',{keyPath:'id'});
   r.onsuccess=()=>res(r.result);r.onerror=()=>res(null)}catch(e){res(null)}});
 async function idbAll(){const db=await dbp;if(!db)return[];return new Promise(res=>{try{const q=db.transaction('tracks').objectStore('tracks').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([])}catch(e){res([])}})}
@@ -432,35 +448,121 @@ const isG=v=>v.startsWith('g:'),isA=v=>v.startsWith('a:');
 function artists(){const m=new Map();S.tracks.forEach(t=>m.set(t.artist,(m.get(t.artist)||0)+1));return [...m].sort((a,b)=>a[0].localeCompare(b[0],'pt'))}
 function genres(){const m=new Map();S.tracks.forEach(t=>m.set(t.genre||NOGENRE,(m.get(t.genre||NOGENRE)||0)+1));
   return [...m].sort((a,b)=>a[0]===NOGENRE?1:b[0]===NOGENRE?-1:a[0].localeCompare(b[0],'pt'))}
-function viewIds(){if(S.view==='all')return S.tracks.map(t=>t.id);
+function viewIds(){if(S.view==='all')return S.tracks.map(t=>t.id);if(S.view==='tidal')return T.res.filter(byId);
   if(isG(S.view)){const g=S.view.slice(2);return S.tracks.filter(t=>(t.genre||NOGENRE)===g).map(t=>t.id)}
   if(isA(S.view)){const a=S.view.slice(2);return S.tracks.filter(t=>t.artist===a).map(t=>t.id)}const p=S.playlists.find(p=>p.id===S.view);return p?p.ids.filter(byId):[]}
-function filtered(){const q=S.q.trim().toLowerCase();const ids=viewIds();return q?ids.filter(id=>{const t=byId(id);return (t.title+' '+t.artist).toLowerCase().includes(q)}):ids}
+function filtered(){if(S.view==='tidal')return viewIds();const q=S.q.trim().toLowerCase();const ids=viewIds();return q?ids.filter(id=>{const t=byId(id);return (t.title+' '+t.artist).toLowerCase().includes(q)}):ids}
 function playFrom(ids,i){S.queue=ids.slice();if(S.shuffle){const f=S.queue.splice(i,1)[0];shuffleArr(S.queue);S.queue.unshift(f);i=0}S.qi=i;load()}
 function cur(){return byId(S.queue[S.qi])}
-function load(){const t=cur();if(!t){updateNow();return}audio.src=t.url;audio.play().catch(()=>{});updateNow();renderList()}
+function load(){const t=cur();if(!t){updateNow();return}
+  if(t.tidal){audio.pause();audio.removeAttribute('src');tidalPlay(t)}
+  else{if(T.P&&T.state!=='IDLE'){T.P.pause();T.state='IDLE'}audio.src=t.url;audio.play().catch(()=>{})}
+  updateNow();renderList();tick()}
 function next(auto){if(!S.queue.length)return;
-  if(auto&&S.repeat==='one'){audio.currentTime=0;audio.play().catch(()=>{});return}
-  if(S.qi<S.queue.length-1)S.qi++;else if(S.repeat==='all'||!auto)S.qi=0;else{audio.pause();audio.currentTime=0;return}load()}
-function prev(){if(audio.currentTime>3||S.qi<=0){audio.currentTime=0;return}S.qi--;load()}
-function toggle(){if(!cur()){const ids=filtered();if(ids.length)playFrom(ids,0);return}audio.paused?audio.play().catch(()=>{}):audio.pause()}
-audio.addEventListener('ended',()=>next(true));
+  if(auto&&S.repeat==='one'){E.seek(0);E.play();return}
+  if(S.qi<S.queue.length-1)S.qi++;else if(S.repeat==='all'||!auto)S.qi=0;else{E.pause();E.seek(0);return}load()}
+function prev(){if(E.time()>3||S.qi<=0){E.seek(0);return}S.qi--;load()}
+function toggle(){if(!cur()){const ids=filtered();if(ids.length)playFrom(ids,0);return}E.paused()?E.play():E.pause()}
+audio.addEventListener('ended',()=>{if(!E.tidal())next(true)});
 /* duração que o celular não leu na hora de adicionar: grava quando a faixa toca */
 audio.addEventListener('loadedmetadata',()=>{const t=cur();if(t&&!t.duration&&isFinite(audio.duration)&&audio.duration>0){t.duration=audio.duration;
   if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}renderHead();renderList()}});
 audio.addEventListener('play',syncPlay);audio.addEventListener('pause',syncPlay);
 let seeking=false;
-audio.addEventListener('timeupdate',()=>{if(seeking)return;const d=audio.duration||0,p=d?audio.currentTime/d:0;
-  $('#pos').value=Math.round(p*1000);$('#pos').style.setProperty('--p',p*100+'%');$('#cur').textContent=fmt(audio.currentTime);$('#tot').textContent=fmt(d)});
-$('#pos').addEventListener('input',e=>{seeking=true;const d=audio.duration||0,v=e.target.value/1000;e.target.style.setProperty('--p',v*100+'%');$('#cur').textContent=fmt(v*d)});
-$('#pos').addEventListener('change',e=>{if(audio.duration)audio.currentTime=e.target.value/1000*audio.duration;seeking=false});
-function setVol(v){audio.volume=v/100;$('#vol').style.setProperty('--p',v+'%');try{localStorage.setItem('vitrola.vol',v)}catch(e){}}
+function tick(){if(seeking)return;const d=E.dur(),c=E.time(),p=d?Math.min(1,c/d):0;
+  $('#pos').value=Math.round(p*1000);$('#pos').style.setProperty('--p',p*100+'%');$('#cur').textContent=fmt(c);$('#tot').textContent=fmt(d)}
+audio.addEventListener('timeupdate',()=>{if(!E.tidal())tick()});
+$('#pos').addEventListener('input',e=>{seeking=true;const d=E.dur(),v=e.target.value/1000;e.target.style.setProperty('--p',v*100+'%');$('#cur').textContent=fmt(v*d)});
+$('#pos').addEventListener('change',e=>{const d=E.dur();if(d)E.seek(e.target.value/1000*d);seeking=false});
+function setVol(v){audio.volume=v/100;if(T.P)try{T.P.setVolumeLevel(v/100)}catch(e){}$('#vol').style.setProperty('--p',v+'%');try{localStorage.setItem('vitrola.vol',v)}catch(e){}}
 $('#vol').addEventListener('input',e=>setVol(+e.target.value));
-function syncPlay(){const p=!audio.paused;$('#play').innerHTML=p?ICON.pause:ICON.play;$('#play').setAttribute('aria-label',p?'Pausar':'Tocar');renderList()}
+function syncPlay(){const p=!E.paused();$('#play').innerHTML=p?ICON.pause:ICON.play;$('#play').setAttribute('aria-label',p?'Pausar':'Tocar');renderList()}
 function updateNow(){const t=cur();$('#ncover').style.cssText=coverStyle(t);$('#ntitle').textContent=t?t.title:'Nada tocando';$('#nartist').innerHTML=t?esc(t.artist)+(t.album?` · <a class="alb" href="${esc(t.storeUrl||'#')}" target="_blank" rel="noopener">${esc(t.album)}</a>`:''):'Escolha uma faixa';
   document.title=t?`${t.title} · Vitrola`:'Vitrola';
   if(t&&'mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title,artist:t.artist,album:'Vitrola',artwork:t.artUrl?[{src:t.artUrl,type:t.art?.type||'image/jpeg'}]:t.artLink?[{src:t.artLink,sizes:'600x600',type:'image/jpeg'}]:[]})}catch(e){}}}
 try{navigator.mediaSession.setActionHandler('nexttrack',()=>next());navigator.mediaSession.setActionHandler('previoustrack',prev)}catch(e){}
+
+/* ---------- TIDAL ---------- */
+const TIDAL_ID='kvNWlQLxuJaoET8e';
+const TIDAL_SCOPES=['search.read','playback','user.read','collection.read','playlists.read','recommendations.read'];
+const AUTH_JS='https://esm.sh/@tidal-music/auth@1.7.0',PLAYER_JS='https://esm.sh/@tidal-music/player@0.20.1';
+const TAPI='https://openapi.tidal.com/v2/';
+function tidalRedirect(){return location.origin+location.pathname}
+async function tidalAuth(){if(!T.auth){const a=await import(AUTH_JS);
+    await a.init({clientId:TIDAL_ID,credentialsStorageKey:'vitrola-tidal',scopes:TIDAL_SCOPES});T.auth=a}
+  return T.auth}
+async function tidalLogin(){toast('Abrindo o login do TIDAL…');
+  try{const a=await tidalAuth();location.href=await a.initializeLogin({redirectUri:tidalRedirect()})}
+  catch(e){console.error(e);toast('Não foi possível abrir o login do TIDAL')}}
+async function tidalLogout(){try{const a=await tidalAuth();await a.logout()}catch(e){}
+  try{localStorage.removeItem('vitrola.tidal.on')}catch(e){}
+  if(E.tidal()){E.pause();S.queue=[];S.qi=-1;updateNow();syncPlay()}
+  T.on=false;T.res=[];S.view='all';render();toast('Você saiu do TIDAL')}
+/* volta do login (?code=...) e confere se a sessão continua valendo */
+async function tidalBoot(){const qs=new URLSearchParams(location.search),back=qs.has('code')||qs.has('error');
+  let flag=false;try{flag=!!localStorage.getItem('vitrola.tidal.on')}catch(e){}
+  if(!back&&!flag)return;
+  try{const a=await tidalAuth();
+    if(qs.has('code'))await a.finalizeLogin(location.search);
+    const c=await a.credentialsProvider.getCredentials();T.on=!!(c&&c.token&&c.userId)}
+  catch(e){console.error(e);T.on=false}
+  if(back){history.replaceState(null,'',location.pathname);
+    if(T.on){S.view='tidal';toast('TIDAL conectado. Busque qualquer música')}else toast('O login do TIDAL não foi concluído')}
+  try{T.on?localStorage.setItem('vitrola.tidal.on','1'):localStorage.removeItem('vitrola.tidal.on')}catch(e){}
+  render()}
+async function tget(path){const a=await tidalAuth(),c=await a.credentialsProvider.getCredentials();
+  if(!c||!c.token)throw Object.assign(new Error('auth'),{status:401});
+  const r=await fetch(TAPI+path,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.api+json'}});
+  if(!r.ok)throw Object.assign(new Error('http '+r.status),{status:r.status});return r.json()}
+async function country(){if(T.cc)return T.cc;T.cc='BR';
+  try{const u=await tget('users/me');const c=u&&u.data&&u.data.attributes&&u.data.attributes.country;if(c)T.cc=c}catch(e){}return T.cc}
+function isoDur(s){const m=/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/.exec(s||'');return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0}
+const fid=ids=>ids.map(i=>'filter%5Bid%5D='+encodeURIComponent(i)).join('&');
+async function tidalSearch(q){const cc=await country();
+  const s=await tget(`searchResults/${encodeURIComponent(q)}/relationships/tracks?countryCode=${cc}&explicitFilter=INCLUDE`);
+  const ids=((s&&s.data)||[]).map(d=>d.id).slice(0,20);if(!ids.length)return[];
+  const tr=await tget(`tracks?countryCode=${cc}&include=artists,albums&${fid(ids)}`);
+  const inc=new Map(((tr&&tr.included)||[]).map(x=>[x.type+':'+x.id,x]));
+  const albumIds=[...new Set((tr.data||[]).map(t=>t.relationships?.albums?.data?.[0]?.id).filter(Boolean))];
+  const covers=new Map();
+  if(albumIds.length){try{const al=await tget(`albums?countryCode=${cc}&include=coverArt&${fid(albumIds)}`);
+    const art=new Map(((al&&al.included)||[]).filter(x=>x.type==='artworks').map(x=>[x.id,x]));
+    for(const a of al.data||[]){const w=art.get(a.relationships?.coverArt?.data?.[0]?.id);const files=(w&&w.attributes&&w.attributes.files)||[];
+      const f=files.slice().sort((x,y)=>Math.abs((x.meta?.width||0)-640)-Math.abs((y.meta?.width||0)-640))[0];if(f&&f.href)covers.set(a.id,f.href)}}catch(e){}}
+  const byTid=new Map((tr.data||[]).map(t=>[t.id,t]));
+  return ids.map(id=>byTid.get(id)).filter(Boolean).map(t=>{const at=t.attributes||{};
+    const artist=(t.relationships?.artists?.data||[]).map(r=>inc.get('artists:'+r.id)?.attributes?.name).filter(Boolean).join(', ')||UNKNOWN;
+    const alId=t.relationships?.albums?.data?.[0]?.id,alb=alId&&inc.get('albums:'+alId);
+    const rec={id:'td-'+t.id,tidalId:t.id,tidal:true,demo:true,genre:'TIDAL',title:at.title+(at.version?` (${at.version})`:''),artist,
+      album:alb?.attributes?.title||'',artLink:covers.get(alId)||null,storeUrl:'https://tidal.com/track/'+t.id,duration:isoDur(at.duration)};
+    T.cache.set(rec.id,rec);return rec})}
+let searchT=0,searchN=0;
+function queueSearch(){clearTimeout(searchT);const q=S.q.trim();if(!q){T.res=[];T.searching=false;T.err='';renderHead();renderList();return}
+  T.searching=true;renderList();searchT=setTimeout(async()=>{const n=++searchN;
+    try{const r=await tidalSearch(q);if(n!==searchN)return;T.res=r.map(t=>t.id);T.err=''}
+    catch(e){if(n!==searchN)return;console.error(e);T.res=[];
+      T.err=e.status===401?'Sua sessão do TIDAL expirou. Conecte de novo.':e.status===429?'Muitas buscas seguidas. Espere alguns segundos.':'A busca no TIDAL falhou. Tente de novo.';
+      if(e.status===401){T.on=false;try{localStorage.removeItem('vitrola.tidal.on')}catch(x){}renderNav()}}
+    T.searching=false;renderHead();renderList()},450)}
+/* player oficial do TIDAL: carregado só quando a primeira faixa do TIDAL toca */
+async function tidalPlayer(){if(T.P)return T.P;const a=await tidalAuth(),P=await import(PLAYER_JS);
+  P.setCredentialsProvider(a.credentialsProvider);P.setEventSender({sendEvent(){}});
+  P.events.addEventListener('playback-state-change',e=>{T.state=e.detail.state;syncPlay()});
+  P.events.addEventListener('ended',e=>{if(e.detail&&e.detail.reason==='completed'&&E.tidal())next(true)});
+  P.events.addEventListener('media-product-transition',()=>{try{const c=P.getPlaybackContext();if(c){T.dur=c.actualDuration||T.dur;
+    const pv=c.actualAssetPresentation==='PREVIEW';if(pv&&!T.preview)toast('Tocando a prévia de 30 segundos: a faixa completa depende do plano e da liberação do TIDAL');T.preview=pv;tick()}}catch(e){}});
+  P.events.addEventListener('error',e=>tErr(e.detail));
+  setInterval(()=>{if(E.tidal()&&T.P){try{T.pos=T.P.getAssetPosition()||0}catch(e){}tick()}},500);
+  try{P.setVolumeLevel(+$('#vol').value/100)}catch(e){}
+  T.P=P;return P}
+async function tidalPlay(t){T.pos=0;T.dur=t.duration||0;T.preview=false;T.state='STALLED';syncPlay();
+  try{const P=await tidalPlayer();if(cur()!==t)return;
+    await P.load({productId:String(t.tidalId),productType:'track',sourceId:String(t.tidalId),sourceType:'TRACK'});
+    if(cur()!==t)return;await P.play()}
+  catch(e){tErr(e)}}
+function tErr(e){console.error('TIDAL',e);T.state='NOT_PLAYING';syncPlay();
+  const code=String((e&&(e.errorCode||e.code||e.errorId))||'');
+  toast(/^(EUN|PEUN)/.test(code)||(e&&e.status===401)?'O TIDAL pediu login de novo. Toque em Conectar o TIDAL':'O TIDAL não deixou tocar esta faixa agora')}
 
 
 /* capa do álbum pela busca oficial do iTunes: só para faixas sem capa no arquivo */
@@ -506,11 +608,16 @@ function renderNav(){
   if(isA(S.view)&&!artists().some(([a])=>'a:'+a===S.view))S.view='all';
   const ars=artists().filter(([a])=>a!==UNKNOWN).map(([a,n])=>`<button data-v="a:${esc(a)}" aria-current="${S.view==='a:'+a}"><span class="nm">${FOLDER}${esc(a)}</span><span class="n">${n}</span></button>`).join('')
     +(artists().some(([a])=>a===UNKNOWN)?`<button data-v="a:${UNKNOWN}" aria-current="${S.view==='a:'+UNKNOWN}"><span class="nm">${FOLDER}Sem artista</span><span class="n">${artists().find(([a])=>a===UNKNOWN)[1]}</span></button>`:'');
-  const all=`<div class="label">Biblioteca</div><button data-v="all" aria-current="${S.view==='all'}"><span class="nm">Todas as músicas</span><span class="n">${S.tracks.length}</span></button>`;
+  const all=`<div class="label">Biblioteca</div><button data-v="all" aria-current="${S.view==='all'}"><span class="nm">Todas as músicas</span><span class="n">${S.tracks.length}</span></button>`
+    +`<div class="label">TIDAL</div><button data-v="tidal" aria-current="${S.view==='tidal'}"><span class="nm">${T.on?'Buscar no TIDAL':'Conectar o TIDAL'}</span><span class="n">${T.on?'':'→'}</span></button>`;
   const gs=genres().map(([g,n])=>`<button data-v="g:${esc(g)}" aria-current="${S.view==='g:'+g}"><span class="nm"><span class="gdot" style="background:${gColor(g)}"></span>${esc(g)}</span><span class="n">${n}</span></button>`).join('');
   const pls=S.playlists.map(p=>`<button data-v="${p.id}" aria-current="${S.view===p.id}"><span class="nm">${esc(p.name)}</span><span class="n">${p.ids.filter(byId).length}</span></button>`).join('');
   $('#nav').innerHTML=all+(ars?'<div class="label">Pastas por artista</div>'+ars:'')+(gs?'<div class="label">Categorias</div>'+gs:'')+(pls?'<div class="label">Playlists</div>'+pls:'')}
-function renderHead(){const p=S.playlists.find(p=>p.id===S.view),g=isG(S.view)?S.view.slice(2):null,ar=isA(S.view)?S.view.slice(2):null,ids=viewIds(),tot=ids.reduce((s,id)=>s+(byId(id).duration||0),0);
+function renderHead(){const tv=S.view==='tidal';$('#tout').hidden=!tv||!T.on;$('#addlbl').hidden=tv;
+  $('#q').placeholder=tv?'Buscar música ou artista no TIDAL':'Buscar faixa ou artista';
+  if(tv){$('#kind').textContent='TIDAL';$('#vtitle').textContent='Catálogo do TIDAL';$('#delpl').hidden=true;$('#playall').hidden=!T.res.length;
+    $('#vmeta').textContent=!T.on?'Conecte sua conta para buscar':T.searching?'Buscando…':T.res.length?`${T.res.length} faixas encontradas`:'Digite no campo de busca';return}
+  const p=S.playlists.find(p=>p.id===S.view),g=isG(S.view)?S.view.slice(2):null,ar=isA(S.view)?S.view.slice(2):null,ids=viewIds(),tot=ids.reduce((s,id)=>s+(byId(id).duration||0),0);
   $('#kind').textContent=p?'Playlist':g?'Categoria':ar?'Artista':'Biblioteca';$('#vtitle').textContent=p?p.name:g||ar||'Todas as músicas';
   const ag=ar?[...new Set(ids.map(id=>byId(id).genre||NOGENRE))].join(', '):'';
   $('#vmeta').textContent=`${ids.length} ${ids.length===1?'faixa':'faixas'} · ${Math.floor(tot/60)} min${ag?' · '+ag:''}`;$('#delpl').hidden=!p;
@@ -532,9 +639,19 @@ async function autoClassify(){if(!S.sample||S.classifying)return;const list=clas
 $('#playall').onclick=()=>{const ids=filtered();if(ids.length)playFrom(ids,0)};
 try{window.claude?.use?.('sample').then(s=>{S.sample=s;autoClassify()}).catch(()=>{})}catch(e){}
 function renderList(){const ids=filtered(),c=cur(),inPl=S.playlists.some(p=>p.id===S.view);
+  if(S.view==='tidal'&&!ids.length){$('#list').innerHTML=`<div class="empty">${!T.on?`<strong>Conecte sua conta do TIDAL</strong><span>Entre com a sua conta para buscar no catálogo do TIDAL e tocar aqui no Vitrola.</span><button class="btn primary" id="tlogin">Conectar o TIDAL</button>`
+      :T.searching?'<strong>Buscando no TIDAL…</strong>':T.err?`<strong>${esc(T.err)}</strong>`:S.q.trim()?'<strong>Nada encontrado</strong><span>Tente outro nome de música ou artista.</span>':'<strong>Busque qualquer música</strong><span>Use o campo de busca acima. Toque numa faixa para ouvir, ou no + para guardar numa playlist.</span>'}</div>`;
+    const b=$('#tlogin');if(b)b.onclick=tidalLogin;return}
   if(!ids.length){$('#list').innerHTML=`<div class="empty"><strong>${S.q?'Nada encontrado':inPl?'Playlist vazia':'Sua biblioteca está vazia'}</strong>
     <span>${S.q?'Tente outro termo de busca.':inPl?'Use o botão + ao lado de uma faixa em "Todas as músicas" para incluí-la aqui.':'Adicione arquivos MP3, M4A, WAV, OGG ou FLAC do seu aparelho.'}</span></div>`;return}
-  $('#list').innerHTML=ids.map((id,i)=>{const t=byId(id),on=c&&c.id===id,pl=on&&!audio.paused;
+  $('#list').innerHTML=ids.map((id,i)=>{const t=byId(id),on=c&&c.id===id,pl=on&&!E.paused();
+    if(t.tidal)return `<div class="row${on?' playing':''}" data-id="${id}" data-i="${i}">
+      <div class="idx"><span class="num">${i+1}</span><button data-act="play" aria-label="${pl?'Pausar':'Tocar'} ${esc(t.title)}">${pl?ICON.pause:ICON.play}</button></div>
+      <div class="cover" style="${coverStyle(t)}"></div>
+      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a"><span class="tag">TIDAL</span><span class="alink">${esc(t.artist)}</span>${t.album?`<span class="gtxt">· ${esc(t.album)}</span>`:''}</div></div>
+      <div class="dur">${fmt(t.duration)}</div>
+      <div class="acts"><button class="icon" data-act="add" aria-label="Adicionar à playlist">${ICON.plus}</button>
+        ${inPl?`<button class="icon rm" data-act="rm" aria-label="Tirar da playlist">${ICON.x}</button>`:''}</div></div>`;
     return `<div class="row${on?' playing':''}" data-id="${id}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><button data-act="play" aria-label="${pl?'Pausar':'Tocar'} ${esc(t.title)}">${pl?ICON.pause:ICON.play}</button></div>
       <div class="cover" style="${coverStyle(t)}"></div>
@@ -543,7 +660,10 @@ function renderList(){const ids=filtered(),c=cur(),inPl=S.playlists.some(p=>p.id
       <div class="acts"><button class="icon" data-act="genre" aria-label="Mudar pasta e categoria">${ICON.tag}</button><button class="icon" data-act="add" aria-label="Adicionar à playlist">${ICON.plus}</button>
         <button class="icon rm" data-act="rm" aria-label="${inPl?'Tirar da playlist':'Remover da biblioteca'}">${ICON.x}</button></div></div>`}).join('')}
 
-$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.view=b.dataset.v;render()});
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.v==='tidal'&&!T.on){S.view='tidal';render();tidalLogin();return}
+  const was=S.view;S.view=b.dataset.v;render();if(S.view==='tidal'&&was!=='tidal'&&S.q.trim())queueSearch()});
+$('#tout').onclick=tidalLogout;
 $('#list').addEventListener('click',e=>{let a=e.target.closest('[data-act]');if(!a){const row=e.target.closest('.row');if(!row||e.target.closest('.acts'))return;a=row.querySelector('.tinfo')}const row=a.closest('.row'),id=row.dataset.id;
   if(a.dataset.act==='play'){const c=cur();if(c&&c.id===id)toggle();else playFrom(filtered(),+row.dataset.i)}
   else if(a.dataset.act==='add')openPop(a,id);
@@ -553,12 +673,13 @@ $('#list').addEventListener('click',e=>{let a=e.target.closest('[data-act]');if(
     if(S.armed===id&&Date.now()-S.armedAt<4000){S.armed=null;removeTrack(id)}
     else{S.armed=id;S.armedAt=Date.now();const inPl=S.playlists.some(p=>p.id===S.view);toast(inPl?'Toque no X de novo para tirar da playlist':'Toque no X de novo para excluir a música')}}});
 function removeTrack(id){const t=byId(id),p=S.playlists.find(p=>p.id===S.view);if(p){p.ids=p.ids.filter(x=>x!==id);savePL();render();toast('Tirada da playlist');return}
+  if(!t||t.tidal)return;
   const playing=cur()&&cur().id===id;if(playing){audio.pause();audio.removeAttribute('src')}
   S.tracks=S.tracks.filter(x=>x.id!==id);S.playlists.forEach(p=>p.ids=p.ids.filter(x=>x!==id));
   const qi=S.queue.indexOf(id);if(qi>-1){S.queue.splice(qi,1);if(qi<S.qi||playing)S.qi=Math.max(-1,S.qi-1)}if(playing){S.queue=[];S.qi=-1;updateNow();syncPlay()}
   if(t.acervo){const ap=acervoPrefs();ap.hidden=[...new Set([...(ap.hidden||[]),id])];saveAcervo(ap);const b=$('#acervoBack');if(b)b.hidden=false}
   idbDel(id);savePL();setTimeout(()=>{try{URL.revokeObjectURL(t.url)}catch(e){}},500);render();toast(`"${t.title}" removida`)}
-$('#q').addEventListener('input',e=>{S.q=e.target.value;renderList()});
+$('#q').addEventListener('input',e=>{S.q=e.target.value;if(S.view==='tidal'&&T.on)queueSearch();else renderList()});
 $('#acervoBack').addEventListener('click',restoreAcervo);
 $('#files').addEventListener('change',e=>{addFiles([...e.target.files]);e.target.value=''});
 /* lê pastas arrastadas, inclusive as de dentro */
@@ -618,7 +739,7 @@ addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=t
   let list=[];try{list=await filesFromDrop(e.dataTransfer)}catch(err){list=[...(e.dataTransfer.files||[])]}if(list.length)addFiles(list)});
 
 /* início */
-(async()=>{S.playlists=loadPL();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
+(async()=>{S.playlists=loadPL();loadTidal();tidalBoot();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
   syncPlay();updateNow();addAcervo();render();
   const saved=await idbAll();saved.sort((a,b)=>a.added-b.added).forEach(r=>{try{if(!r.manualArtist){const m=fixMeta(r.artist,r.title);if(m.artist!==r.artist||m.title!==r.title){r.artist=m.artist;r.title=m.title;r.fixed=1}}
   const g=r.manualGenre?r.genre:(knownGenre(r.artist)||r.genre||NOGENRE);if(g!==r.genre){r.genre=g;r.fixed=1}if(r.fixed){delete r.fixed;idbPut(r)}
