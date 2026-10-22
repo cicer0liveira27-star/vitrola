@@ -519,8 +519,9 @@ async function country(){if(T.cc)return T.cc;T.cc='BR';
 function isoDur(s){const m=/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/.exec(s||'');return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0}
 const fid=ids=>ids.map(i=>'filter%5Bid%5D='+encodeURIComponent(i)).join('&');
 async function tidalSearch(q){const cc=await country();
-  const s=await tget(`searchResults/${encodeURIComponent(q)}/relationships/tracks?countryCode=${cc}&explicitFilter=INCLUDE`);
-  const ids=((s&&s.data)||[]).map(d=>d.id).slice(0,20);if(!ids.length)return[];
+  const s=await tget(`searchResults?filter%5Bquery%5D=${encodeURIComponent(q)}&countryCode=${cc}&explicitFilter=INCLUDE&include=tracks`);
+  const sr=s&&(Array.isArray(s.data)?s.data[0]:s.data);
+  const ids=((sr&&sr.relationships&&sr.relationships.tracks&&sr.relationships.tracks.data)||[]).map(d=>d.id).slice(0,20);if(!ids.length)return[];
   const tr=await tget(`tracks?countryCode=${cc}&include=artists,albums&${fid(ids)}`);
   const inc=new Map(((tr&&tr.included)||[]).map(x=>[x.type+':'+x.id,x]));
   const albumIds=[...new Set((tr.data||[]).map(t=>t.relationships?.albums?.data?.[0]?.id).filter(Boolean))];
@@ -549,7 +550,7 @@ async function tidalPlayer(){if(T.P)return T.P;const a=await tidalAuth(),P=await
   P.setCredentialsProvider(a.credentialsProvider);P.setEventSender({sendEvent(){}});
   P.events.addEventListener('playback-state-change',e=>{T.state=e.detail.state;syncPlay()});
   P.events.addEventListener('ended',e=>{if(e.detail&&e.detail.reason==='completed'&&E.tidal())next(true)});
-  P.events.addEventListener('media-product-transition',()=>{try{const c=P.getPlaybackContext();if(c){T.dur=c.actualDuration||T.dur;
+  P.events.addEventListener('media-product-transition',e=>{try{const c=(e.detail&&e.detail.playbackContext)||P.getPlaybackContext();if(c){T.dur=c.actualDuration||T.dur;
     const pv=c.actualAssetPresentation==='PREVIEW';if(pv&&!T.preview)toast('Tocando a prévia de 30 segundos: a faixa completa depende do plano e da liberação do TIDAL');T.preview=pv;tick()}}catch(e){}});
   P.events.addEventListener('error',e=>tErr(e.detail));
   setInterval(()=>{if(E.tidal()&&T.P){try{T.pos=T.P.getAssetPosition()||0}catch(e){}tick()}},500);
