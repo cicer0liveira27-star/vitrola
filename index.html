@@ -770,15 +770,15 @@ if('serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceW
   const warm=()=>{const w=reg.active||navigator.serviceWorker.controller;if(w&&!(navigator.connection&&navigator.connection.saveData))w.postMessage({type:'cache-acervo'})};
   setTimeout(warm,8000)}).catch(()=>{})})}
 addEventListener('offline',()=>{toast('Sem internet: suas músicas e o acervo continuam tocando');renderList()});
-addEventListener('online',()=>{toast('Internet de volta');if(S.view==='tidal'&&S.q.trim())queueSearch();artQueue()});
+addEventListener('online',()=>{toast('Internet de volta');renderList();if(S.view==='tidal'&&S.q.trim())queueSearch();artQueue()});
 
 /* início */
-(async()=>{S.playlists=loadPL();loadTidal();loadLib();tidalBoot();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
+(async()=>{S.playlists=loadPL();loadTidal();tidalBoot();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
   syncPlay();updateNow();addAcervo();render();
   const saved=await idbAll();saved.sort((a,b)=>a.added-b.added).forEach(r=>{try{if(!r.manualArtist){const m=fixMeta(r.artist,r.title);if(m.artist!==r.artist||m.title!==r.title){r.artist=m.artist;r.title=m.title;r.fixed=1}}
   const g=r.manualGenre?r.genre:(knownGenre(r.artist)||r.genre||NOGENRE);if(g!==r.genre){r.genre=g;r.fixed=1}if(r.fixed){delete r.fixed;idbPut(r)}
   S.tracks.push({...r,genre:g,url:r.link||URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):null})}catch(e){}});
-  render();autoClassify();
+  loadLib();render();autoClassify();
   artQueue();
   /* capa do álbum gravada nos arquivos já adicionados antes */
   for(const t of S.tracks.filter(t=>!t.demo&&!t.artChecked&&t.blob)){const tags=await readTags(t.blob);t.artChecked=1;
