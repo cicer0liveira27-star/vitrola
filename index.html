@@ -308,7 +308,7 @@ const fmt=s=>{if(!isFinite(s)||s<0)s=0;const m=Math.floor(s/60),x=Math.floor(s%6
 const uid=()=>'t'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const byId=id=>S.tracks.find(t=>t.id===id);
 function hash(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))|0;return Math.abs(h)}
-function coverStyle(t){if(!t)return'background:var(--line)';const au=t.artUrl||t.artLink;if(au)return`background:var(--line) center/cover no-repeat url("${au}")`;const h=hash(t.title+t.artist),a=h%360,b=(a+40+(h>>8)%80)%360;
+function coverStyle(t){if(!t)return'background:var(--line)';checkArt(t);const au=t.artUrl||t.artLink;if(au)return`background:var(--line) center/cover no-repeat url("${au}")`;const h=hash(t.title+t.artist),a=h%360,b=(a+40+(h>>8)%80)%360;
   return `background:radial-gradient(circle at ${20+h%60}% ${30+(h>>4)%50}%,hsl(0 0% ${55+h%30}%),transparent 60%),linear-gradient(135deg,hsl(0 0% ${22+(h>>3)%14}%),hsl(0 0% ${8+(h>>5)%8}%))`}
 const UNKNOWN='Artista desconhecido';
 /* nome do arquivo: tira número da faixa e textos de vídeo, separa "Artista - Título" */
@@ -425,7 +425,7 @@ function toggle(){if(!cur()){const ids=filtered();if(ids.length)playFrom(ids,0);
 audio.addEventListener('ended',()=>next(true));
 /* duração que o celular não leu na hora de adicionar: grava quando a faixa toca */
 audio.addEventListener('loadedmetadata',()=>{const t=cur();if(t&&!t.duration&&isFinite(audio.duration)&&audio.duration>0){t.duration=audio.duration;
-  if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}renderHead();renderList()}});
+  if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}renderHead();renderList()}});
 audio.addEventListener('play',syncPlay);audio.addEventListener('pause',syncPlay);
 let seeking=false;
 audio.addEventListener('timeupdate',()=>{if(seeking)return;const d=audio.duration||0,p=d?audio.currentTime/d:0;
@@ -443,6 +443,12 @@ try{navigator.mediaSession.setActionHandler('nexttrack',()=>next());navigator.me
 
 /* capa do álbum pela busca oficial do iTunes: só para faixas sem capa no arquivo */
 const artBusy=new Set();let artRunning=false;
+/* confere se a capa abre de verdade; se estiver quebrada, busca outra */
+function checkArt(t){const src=t.artUrl||t.artLink;if(!src||t.artOk===src||t.artChk===src)return;t.artChk=src;const img=new Image();
+  img.onload=()=>{t.artOk=src};
+  img.onerror=()=>{if(t.artUrl===src){try{URL.revokeObjectURL(src)}catch(e){}t.artUrl=null;t.art=null}else{t.artLink=null;t.album=null;t.storeUrl=null}
+    t.artLooked=0;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}render();if(cur()===t)updateNow();setTimeout(artQueue,200)};
+  img.src=src}
 /* o iTunes recomenda este formato para páginas web: a resposta chega como script */
 function jsonp(url){return new Promise((res,rej)=>{const cb='vitrolaCb'+Math.random().toString(36).slice(2);const sc=document.createElement('script');
   const done=()=>{clearTimeout(to);try{delete window[cb]}catch(e){window[cb]=undefined}sc.remove()};
@@ -460,7 +466,7 @@ async function findArt(t){const q=encodeURIComponent(`${t.artist===UNKNOWN?'':t.
 async function artQueue(){if(artRunning)return;artRunning=true;let fails=0;
   try{for(const t of S.tracks.filter(t=>!t.demo&&!t.art&&!t.artLink&&!t.artLooked&&!artBusy.has(t.id))){artBusy.add(t.id);
       try{const f=await findArt(t);fails=0;t.artLooked=1;if(f){Object.assign(t,f);render();if(cur()===t)updateNow()}
-        if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}}catch(e){artBusy.delete(t.id);if(++fails>=3)break}
+        if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}}catch(e){artBusy.delete(t.id);if(++fails>=3)break}
       await new Promise(r=>setTimeout(r,350))}}
   finally{artRunning=false}}
 $('#play').onclick=toggle;$('#next').onclick=()=>next();$('#prev').onclick=prev;
@@ -495,7 +501,7 @@ async function autoClassify(){if(!S.sample||S.classifying)return;const list=clas
   S.classifying=true;list.forEach(a=>S.asked.add(a));
   try{const res=await S.sample.json(`Você classifica artistas musicais pelo gênero principal pelo qual são conhecidos. Para cada artista da lista, dê um gênero em português do Brasil, usando de preferência uma destas categorias: ${PRESETS.join(', ')}. Use outra categoria curta só se nenhuma servir. Se não reconhecer o artista com segurança, use "${NOGENRE}". Responda só com um objeto JSON no formato {"Nome do artista exatamente como veio": "Categoria"}.\n\nArtistas:\n${list.map(a=>'- '+a).join('\n')}`,{modelTier:'quick'});
     let n=0;for(const a of list){const g=res&&typeof res[a]==='string'?normGenre(res[a]):null;if(!g||g===NOGENRE)continue;
-      S.tracks.filter(t=>t.artist===a).forEach(t=>{t.genre=g;n++;if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}})}
+      S.tracks.filter(t=>t.artist===a).forEach(t=>{t.genre=g;n++;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}})}
     if(n)toast(`${n} ${n>1?'faixas separadas':'faixa separada'} por categoria`)}
   catch(e){if(e&&['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'].includes(e.code))S.sample=null;
     if(e&&['rate_limited','upstream_error'].includes(e.code))list.forEach(a=>S.asked.delete(a))}
@@ -563,9 +569,9 @@ function openGenre(btn,id){const t=byId(id),cur=t.genre||NOGENRE;
     '<form id="gform"><input id="gnew" placeholder="Outra categoria" maxlength="30" aria-label="Nova categoria"><button type="submit">OK</button></form>';
   placePop(btn.getBoundingClientRect(),id,'genre')}
 function setGenre(id,g){const t=byId(id);if(!t)return;t.genre=normGenre(g);t.manualGenre=true;
-  if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}pop.hidden=true;render();toast(`"${t.title}" agora está em ${t.genre}`)}
+  if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}pop.hidden=true;render();toast(`"${t.title}" agora está em ${t.genre}`)}
 function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)return;t.artist=a;t.manualArtist=true;if(!t.art){delete t.artLink;delete t.album;delete t.storeUrl;t.artLooked=0;setTimeout(artQueue,300)}
-  if(!t.manualGenre)t.genre=knownGenre(a)||t.genre;if(!t.demo){const {url,artUrl,...rec}=t;idbPut(rec)}
+  if(!t.manualGenre)t.genre=knownGenre(a)||t.genre;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}
   pop.hidden=true;render();toast(`"${t.title}" movida para a pasta ${a}`);autoClassify()}
 pop.addEventListener('submit',e=>{e.preventDefault();
   if(e.target.id==='aform'){const v=$('#anew').value.trim();if(v)setArtist(pop.dataset.id,v);return}
@@ -596,7 +602,7 @@ addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=t
   /* capa do álbum gravada nos arquivos já adicionados antes */
   for(const t of S.tracks.filter(t=>!t.demo&&!t.artChecked&&t.blob)){const tags=await readTags(t.blob);t.artChecked=1;
     if(tags.art){t.art=tags.art;t.artUrl=URL.createObjectURL(tags.art);render();if(cur()===t)updateNow()}
-    const {url,artUrl,...rec}=t;idbPut(rec)}})();
+    const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}})();
 </script>
 
 </body>
