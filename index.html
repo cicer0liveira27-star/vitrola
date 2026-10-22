@@ -111,6 +111,13 @@ button:focus-visible,input:focus-visible,label:focus-within{outline:2px solid va
 .empty strong{color:var(--fg);font-size:16px}
 .note{color:var(--muted);font-size:13px;max-width:62ch}
 .note a{color:inherit}
+.backup{margin-top:22px;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);max-width:560px}
+.backup h3{margin:0 0 6px;font-family:var(--display);font-size:18px}
+.backup p{margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.5}
+.backup .bkbtn{display:block;width:100%;padding:12px 16px;margin-top:10px;border-radius:999px;border:1px solid var(--line);background:var(--raised);color:var(--fg);font:inherit;font-weight:600;font-size:15px;cursor:pointer}
+.backup .bkbtn:hover{border-color:var(--muted)}
+.backup .bkbtn[disabled]{opacity:.6;cursor:progress}
+.backup .bklast{margin:12px 0 0;font-size:12px}
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
 .linkbtn[hidden]{display:none}
 
@@ -214,6 +221,14 @@ html,body{overflow-x:hidden}
     <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na etiqueta. As músicas ficam salvas neste aparelho e continuam aqui quando você volta, desde que abra sempre pelo mesmo navegador e fora do modo anônimo. Nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca.</p>
     <p class="note">O Vitrola funciona sem internet: as músicas que você adicionou do aparelho e o acervo continuam tocando.</p>
     <p class="note">As faixas marcadas como acervo já vêm com o Vitrola para todo mundo ouvir: são de <a href="https://tannerhelland.com/music" target="_blank" rel="noopener">Tanner Helland</a>, sob a licença <a href="https://creativecommons.org/licenses/by/4.0/deed.pt_BR" target="_blank" rel="noopener">CC BY 4.0</a>, sem alterações (<a href="acervo/CREDITOS.md" target="_blank" rel="noopener">créditos</a>). <button type="button" class="linkbtn" id="acervoBack" hidden>Trazer de volta as faixas do acervo que você tirou</button></p>
+    <section class="backup" aria-labelledby="bkTitle">
+      <h3 id="bkTitle">Backup</h3>
+      <p>Suas músicas ficam salvas neste aparelho. Faça um backup de vez em quando para não perder nada se trocar de aparelho, limpar o navegador ou o endereço do site mudar.</p>
+      <button type="button" class="bkbtn" id="bkSave">Baixar backup</button>
+      <button type="button" class="bkbtn" id="bkLoad">Restaurar backup</button>
+      <input type="file" id="bkFile" hidden>
+      <p class="bklast" id="bkLast"></p>
+    </section>
   </main>
 </div>
 
@@ -631,6 +646,46 @@ addEventListener('online',()=>{toast('Internet de volta');artQueue()});
 /* limpa o que ficou da ligação com o TIDAL, que foi removida */
 try{for(const k of Object.keys(localStorage))if(/vitrola[.-]tidal/i.test(k))localStorage.removeItem(k);
   const pl=JSON.parse(localStorage.getItem('vitrola.playlists'))||[];if(pl.some(p=>p.ids.some(i=>String(i).startsWith('td-')))){pl.forEach(p=>p.ids=p.ids.filter(i=>!String(i).startsWith('td-')));localStorage.setItem('vitrola.playlists',JSON.stringify(pl))}}catch(e){}
+
+/* backup: um arquivo .vitrola com as músicas do aparelho, capas, playlists e ajustes */
+const BK_MAGIC='VITROLA-BACKUP-1\n',BK_KEYS=['vitrola.playlists','vitrola.vol','vitrola.acervo'];
+function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function bkStamp(){const t=+lsGet('vitrola.backupEm');$('#bkLast').textContent=t?`Último backup neste aparelho: ${new Date(t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}.`:'Você ainda não fez nenhum backup neste aparelho.'}
+async function makeBackup(){const btn=$('#bkSave');btn.disabled=true;btn.textContent='Preparando backup…';
+  try{const recs=await idbAll(),parts=[],meta=[];let off=0;
+    const add=b=>{const ref={o:off,l:b.size,t:b.type||''};parts.push(b);off+=b.size;return ref};
+    for(const r of recs){const m={...r};if(r.blob instanceof Blob)m.blob=add(r.blob);if(r.art instanceof Blob)m.art=add(r.art);meta.push(m)}
+    const ls={};BK_KEYS.forEach(k=>{const v=lsGet(k);if(v!==null)ls[k]=v});
+    const head=new TextEncoder().encode(JSON.stringify({app:'Vitrola',v:1,criado:Date.now(),tracks:meta,ls}));
+    const file=new Blob([BK_MAGIC,String(head.length).padStart(12,'0'),head,...parts],{type:'application/octet-stream'});
+    const d=new Date(),z=n=>String(n).padStart(2,'0'),a=document.createElement('a');
+    a.href=URL.createObjectURL(file);a.download=`vitrola-backup-${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}.vitrola`;
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),120000);
+    try{localStorage.setItem('vitrola.backupEm',String(Date.now()))}catch(e){}bkStamp();
+    const np=S.playlists.length;toast(`Backup baixado: ${recs.length} ${recs.length===1?'música':'músicas'} e ${np} ${np===1?'playlist':'playlists'}`)}
+  catch(e){toast('Não deu para gerar o backup. Tente de novo.')}
+  finally{btn.disabled=false;btn.textContent='Baixar backup'}}
+async function restoreBackup(file){const btn=$('#bkLoad');btn.disabled=true;btn.textContent='Restaurando…';askPersist();
+  try{let p=BK_MAGIC.length;if(await file.slice(0,p).text()!==BK_MAGIC)throw new Error('formato');
+    const n=parseInt(await file.slice(p,p+12).text(),10);p+=12;
+    const meta=JSON.parse(await file.slice(p,p+n).text());p+=n;
+    const part=async ref=>ref&&typeof ref.o==='number'?new Blob([await file.slice(p+ref.o,p+ref.o+ref.l).arrayBuffer()],{type:ref.t}):null;
+    let ok=0,fail=0;
+    for(const m of meta.tracks||[]){const r={...m};try{if(m.blob)r.blob=await part(m.blob);if(m.art)r.art=await part(m.art);
+      (await idbPut(r))?ok++:fail++}catch(e){fail++}}
+    const ls=meta.ls||{};
+    try{const mine=loadPL(),theirs=JSON.parse(ls['vitrola.playlists']||'[]');
+      for(const pl of theirs){const m=mine.find(x=>x.id===pl.id);if(m)m.ids=[...new Set([...m.ids,...pl.ids])];else mine.push(pl)}
+      localStorage.setItem('vitrola.playlists',JSON.stringify(mine));
+      if(ls['vitrola.vol']!=null)localStorage.setItem('vitrola.vol',ls['vitrola.vol']);
+      if(ls['vitrola.acervo']!=null)localStorage.setItem('vitrola.acervo',ls['vitrola.acervo'])}catch(e){}
+    toast(fail?`${ok} músicas restauradas; ${fail} não couberam neste aparelho`:`Backup restaurado: ${ok} ${ok===1?'música':'músicas'}`);
+    setTimeout(()=>location.reload(),1800)}
+  catch(e){toast(e&&e.message==='formato'?'Esse arquivo não é um backup do Vitrola':'Não deu para restaurar esse backup');btn.disabled=false;btn.textContent='Restaurar backup'}}
+$('#bkSave').addEventListener('click',makeBackup);
+$('#bkLoad').addEventListener('click',()=>$('#bkFile').click());
+$('#bkFile').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)restoreBackup(f)});
+bkStamp();
 
 /* início */
 (async()=>{S.playlists=loadPL();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
