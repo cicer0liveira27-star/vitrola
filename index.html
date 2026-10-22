@@ -485,7 +485,7 @@ try{navigator.mediaSession.setActionHandler('nexttrack',()=>next());navigator.me
 /* ---------- TIDAL ---------- */
 const TIDAL_ID='kvNWlQLxuJaoET8e';
 const TIDAL_SCOPES=['search.read','playback','user.read','collection.read','playlists.read','recommendations.read'];
-const AUTH_JS='https://esm.sh/@tidal-music/auth@1.7.0',PLAYER_JS='https://esm.sh/@tidal-music/player@0.20.1';
+const AUTH_JS='https://esm.sh/@tidal-music/auth@1.7.0',PLAYER_JS='https://esm.sh/@tidal-music/player@0.20.1?bundle';
 const TAPI='https://openapi.tidal.com/v2/';
 function tidalRedirect(){return location.origin+location.pathname}
 async function tidalAuth(){if(!T.auth){const a=await import(AUTH_JS);
@@ -551,9 +551,9 @@ async function tidalPlayer(){if(T.P)return T.P;const a=await tidalAuth(),P=await
   P.events.addEventListener('playback-state-change',e=>{T.state=e.detail.state;syncPlay()});
   P.events.addEventListener('ended',e=>{if(e.detail&&e.detail.reason==='completed'&&E.tidal())next(true)});
   P.events.addEventListener('media-product-transition',e=>{try{const c=(e.detail&&e.detail.playbackContext)||P.getPlaybackContext();if(c){T.dur=c.actualDuration||T.dur;
-    const pv=c.actualAssetPresentation==='PREVIEW';if(pv&&!T.preview)toast('Tocando a prévia de 30 segundos: a faixa completa depende do plano e da liberação do TIDAL');T.preview=pv;tick()}}catch(e){}});
+    const pv=c.actualAssetPresentation==='PREVIEW';if(pv&&!T.preview)toast(c.previewReason==='FULL_REQUIRES_SUBSCRIPTION'||c.previewReason==='FULL_REQUIRES_HIGHER_ACCESS_TIER'?'O TIDAL liberou só a prévia de 30 s: a faixa inteira exige um plano pago':'Tocando a prévia de 30 segundos do TIDAL');T.preview=pv;tick()}}catch(e){}});
   P.events.addEventListener('error',e=>tErr(e.detail));
-  setInterval(()=>{if(E.tidal()&&T.P){try{T.pos=T.P.getAssetPosition()||0}catch(e){}tick()}},500);
+  setInterval(()=>{if(E.tidal()&&T.P){try{T.pos=T.P.getAssetPosition()||0;const s=T.P.getPlaybackState();if(s&&s!==T.state){T.state=s;syncPlay()}}catch(e){}tick()}},500);
   try{P.setVolumeLevel(+$('#vol').value/100)}catch(e){}
   T.P=P;return P}
 async function tidalPlay(t){T.pos=0;T.dur=t.duration||0;T.preview=false;T.state='STALLED';syncPlay();
