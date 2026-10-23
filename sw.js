@@ -1,12 +1,9 @@
-/* Vitrola: guarda o app, as bibliotecas e o acervo para funcionar sem internet */
-const SHELL = 'vitrola-shell-v1';
+/* Vitrola: guarda o app e as bibliotecas para funcionar sem internet */
+const SHELL = 'vitrola-shell-v2';
 const LIBS = 'vitrola-libs-v2';
-const ACERVO = 'vitrola-acervo-v1';
-const KEEP = [SHELL, LIBS, ACERVO];
-const SHELL_FILES = ['./', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './acervo/CREDITOS.md'];
-const ACERVO_FILES = ['defiance', 'syntheticity', 'daybreak', 'the-forest-awakes', 'deserve-to-be-loved', 'king-of-the-desert',
-  'a-memory-away', 'find-you', 'honky-tonk-villain', 'wild-waters', 'home', 'leaving-millie', 'carol-of-the-bells']
-  .map(f => './acervo/' + f + '.mp3');
+/* o acervo de músicas foi retirado: o cache antigo dele é apagado na ativação */
+const KEEP = [SHELL, LIBS];
+const SHELL_FILES = ['./', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
@@ -17,57 +14,6 @@ self.addEventListener('activate', e => {
     .then(keys => Promise.all(keys.filter(k => k.startsWith('vitrola-') && !KEEP.includes(k)).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
-
-/* o app pede para baixar o acervo aos poucos, em segundo plano */
-let warming = false;
-async function warmAcervo() {
-  if (warming) return;
-  warming = true;
-  try {
-    const c = await caches.open(ACERVO);
-    for (const f of ACERVO_FILES) {
-      const url = new URL(f, self.registration.scope).href;
-      if (await c.match(url)) continue;
-      try { const r = await fetch(url); if (r.ok && r.status === 200) await c.put(url, r); } catch (e) { break; }
-    }
-  } finally { warming = false; }
-}
-self.addEventListener('message', e => {
-  if (e.data && e.data.type === 'cache-acervo') e.waitUntil(warmAcervo());
-});
-
-/* áudio pede pedaços do arquivo (Range): monta a resposta parcial a partir do arquivo guardado */
-async function withRange(req, res) {
-  const range = req.headers.get('range');
-  if (!range) return res;
-  const buf = await res.arrayBuffer();
-  const size = buf.byteLength;
-  const m = /bytes=(\d*)-(\d*)/.exec(range);
-  let start = m && m[1] ? +m[1] : 0;
-  let end = m && m[2] ? +m[2] : size - 1;
-  if (m && !m[1] && m[2]) { start = Math.max(0, size - +m[2]); end = size - 1; }
-  end = Math.min(end, size - 1);
-  if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
-  return new Response(buf.slice(start, end + 1), {
-    status: 206,
-    headers: {
-      'Content-Type': res.headers.get('Content-Type') || 'audio/mpeg',
-      'Content-Range': `bytes ${start}-${end}/${size}`,
-      'Content-Length': String(end - start + 1),
-      'Accept-Ranges': 'bytes'
-    }
-  });
-}
-
-async function acervo(req) {
-  const c = await caches.open(ACERVO);
-  const hit = await c.match(req.url);
-  if (hit) return withRange(req, hit);
-  /* ainda não guardado: toca pela internet e guarda o arquivo inteiro para a próxima vez */
-  const net = fetch(req);
-  net.then(() => fetch(req.url).then(r => { if (r.ok && r.status === 200) return c.put(req.url, r); })).catch(() => {});
-  return net;
-}
 
 async function page(req) {
   const c = await caches.open(SHELL);
@@ -106,7 +52,6 @@ self.addEventListener('fetch', e => {
   const scope = new URL(self.registration.scope);
   if (url.origin === scope.origin && url.pathname.startsWith(scope.pathname)) {
     if (req.mode === 'navigate') return e.respondWith(page(req));
-    if (url.pathname.includes('/acervo/') && url.pathname.endsWith('.mp3')) return e.respondWith(acervo(req));
     return e.respondWith(cacheFirst(SHELL, req));
   }
   /* fontes: guardadas depois da primeira vez */

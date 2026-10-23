@@ -6,4 +6,4 @@ Player de música que toca os arquivos de áudio do próprio aparelho, com pasta
 
 As músicas que cada pessoa adiciona ficam guardadas só no navegador dela e nunca vão para este repositório.
 
-Quem abre o Vitrola já encontra um acervo inicial de 13 faixas na pasta `acervo/`, de Tanner Helland, sob a licença CC BY 4.0. Créditos completos em [acervo/CREDITOS.md](acervo/CREDITOS.md).
+O Vitrola não vem com músicas: cada pessoa adiciona as suas, uma a uma, a partir do próprio aparelho.

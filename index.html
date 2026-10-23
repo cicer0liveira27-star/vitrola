@@ -334,9 +334,8 @@ input[type=range]:hover::-moz-range-thumb,input[type=range]:focus-visible::-moz-
     <div class="list" id="list"></div>
     <div class="foot">
       <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na categoria. As músicas ficam salvas neste aparelho e continuam aqui quando você volta, desde que abra sempre pelo mesmo navegador e fora do modo anônimo. Nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca.</p>
-      <p class="note">O Vitrola funciona sem internet: as músicas que você adicionou do aparelho, o acervo e as letras já abertas continuam disponíveis.</p>
+      <p class="note">O Vitrola funciona sem internet: as músicas que você adicionou do aparelho e as letras já abertas continuam disponíveis.</p>
       <p class="note">As letras vêm do <a href="https://lrclib.net" target="_blank" rel="noopener">LRCLIB</a>, uma base aberta e comunitária, ou da própria letra gravada no arquivo MP3. Você também pode importar um arquivo .lrc ou colar a letra na tela de letra.</p>
-      <p class="note">As faixas marcadas como acervo já vêm com o Vitrola para todo mundo ouvir: são de <a href="https://tannerhelland.com/music" target="_blank" rel="noopener">Tanner Helland</a>, sob a licença <a href="https://creativecommons.org/licenses/by/4.0/deed.pt_BR" target="_blank" rel="noopener">CC BY 4.0</a>, sem alterações (<a href="acervo/CREDITOS.md" target="_blank" rel="noopener">créditos</a>). <button type="button" class="linkbtn" id="acervoBack" hidden>Trazer de volta as faixas do acervo que você tirou</button></p>
       <section class="backup" aria-labelledby="bkTitle">
         <h3 id="bkTitle">Backup</h3>
         <p>Suas músicas ficam salvas neste aparelho. Faça um backup de vez em quando para não perder nada se trocar de aparelho, limpar o navegador ou o endereço do site mudar. O backup leva junto as letras.</p>
@@ -559,56 +558,6 @@ async function addFiles(files){let n=0,dup=0,failed=0;askPersist();
   savePL();render();toast(n?`${n} ${n>1?'músicas adicionadas':'música adicionada'}${dup?`, ${dup} já estava${dup>1?'m':''} na biblioteca`:''}`:dup?'Essas músicas já estão na biblioteca':'Nenhum arquivo de áudio encontrado');
   if(failed)setTimeout(()=>toast(`${failed} ${failed>1?'músicas tocam agora mas não foram salvas':'música toca agora mas não foi salva'}: falta espaço ou o navegador está em modo anônimo`),2800);autoClassify();artQueue()}
 
-/* ---------- faixas de exemplo geradas no navegador ---------- */
-function wav(buf){const ch=buf.getChannelData(0),n=ch.length,ab=new ArrayBuffer(44+n*2),v=new DataView(ab);
-  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
-  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
-  v.setUint32(24,buf.sampleRate,true);v.setUint32(28,buf.sampleRate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
-  for(let i=0,o=44;i<n;i++,o+=2){const s=Math.max(-1,Math.min(1,ch[i]));v.setInt16(o,s<0?s*0x8000:s*0x7FFF,true)}
-  return new Blob([ab],{type:'audio/wav'})}
-async function synth(sp){const sr=22050,dur=sp.dur,ctx=new OfflineAudioContext(1,sr*dur,sr);
-  const master=ctx.createGain();master.gain.value=.55;master.connect(ctx.destination);
-  const beat=60/sp.bpm,note=m=>440*Math.pow(2,(m-69)/12);
-  const nb=ctx.createBuffer(1,sr*.2,sr),nd=nb.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
-  const tone=(f,t,len,type,vol)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.value=f;
-    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.015);g.gain.exponentialRampToValueAtTime(.0001,t+len);
-    o.connect(g).connect(master);o.start(t);o.stop(t+len+.05)};
-  const steps=Math.floor(dur/beat)-1;
-  for(let b=0;b<steps;b++){const t=b*beat,ch=sp.chords[Math.floor(b/4)%sp.chords.length];
-    if(b%sp.kick===0){const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(45,t+.12);
-      g.gain.setValueAtTime(.9,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.connect(g).connect(master);o.start(t);o.stop(t+.32)}
-    const th=t+beat/2,n=ctx.createBufferSource(),hp=ctx.createBiquadFilter(),hg=ctx.createGain();n.buffer=nb;hp.type='highpass';hp.frequency.value=6000;
-    hg.gain.setValueAtTime(.18,th);hg.gain.exponentialRampToValueAtTime(.001,th+.05);n.connect(hp).connect(hg).connect(master);n.start(th);n.stop(th+.06);
-    tone(note(ch[0]-12),t,beat*.9,'triangle',.4);
-    if(b%4===0)ch.forEach(m=>tone(note(m+12),t,beat*4,'sine',.07));
-    tone(note(ch[(b*sp.arp)%ch.length]+24),th,beat*.45,sp.lead,.06)}
-  return wav(await ctx.startRendering())}
-const DEMOS=[
-  {title:'Maré Baixa',genre:'Lo-Fi',bpm:92,kick:1,arp:1,lead:'triangle',chords:[[57,60,64],[53,57,60],[48,52,55],[55,59,62]]},
-  {title:'Luz de Poste',genre:'Eletrônica',bpm:112,kick:2,arp:2,lead:'square',chords:[[50,53,57],[55,58,62],[52,55,59],[57,61,64]]},
-  {title:'Céu de Outubro',genre:'Lo-Fi',bpm:78,kick:2,arp:1,lead:'sine',chords:[[48,52,55],[45,48,52],[53,57,60],[55,59,62]]}];
-async function addDemos(){if(typeof OfflineAudioContext==='undefined')return;
-  for(const d of DEMOS){try{const blob=await synth({...d,dur:20}),url=URL.createObjectURL(blob);
-    S.tracks.push({id:'demo-'+hash(d.title),title:d.title,artist:'Vitrola',genre:d.genre,demo:true,url,duration:await getDuration(url)});render()}catch(e){}}}
-
-/* acervo inicial: músicas de Tanner Helland (CC BY 4.0), tocadas direto do site, sem ocupar espaço no aparelho */
-const ACERVO_BY='Tanner Helland';
-const ACERVO=[
-  ['defiance','Defiance','Trilha sonora',165],['syntheticity','Syntheticity','Trilha sonora',205],
-  ['daybreak','Daybreak','Trilha sonora',114],['the-forest-awakes','The Forest Awakes','Trilha sonora',125],
-  ['deserve-to-be-loved','Deserve to be Loved','Trilha sonora',206],['king-of-the-desert','King of the Desert','Trilha sonora',202],
-  ['a-memory-away','A Memory Away','Trilha sonora',126],['find-you','Find You','Trilha sonora',103],
-  ['honky-tonk-villain','Honky-Tonk Villain','Trilha sonora',60],['wild-waters','Wild Waters','Trilha sonora',82],
-  ['home','Home','Trilha sonora',90],['leaving-millie','Leaving Millie (ao vivo)','Piano',153],
-  ['carol-of-the-bells','Carol of the Bells','Natal',130]];
-function acervoPrefs(){try{return JSON.parse(localStorage.getItem('vitrola.acervo'))||{}}catch(e){return{}}}
-function saveAcervo(p){try{localStorage.setItem('vitrola.acervo',JSON.stringify(p))}catch(e){}}
-function addAcervo(){const p=acervoPrefs(),hid=new Set(p.hidden||[]),gs=p.genre||{};
-  for(const [f,title,genre,duration] of ACERVO){const id='acervo-'+f;if(hid.has(id)||S.tracks.some(t=>t.id===id))continue;
-    S.tracks.push({id,title,artist:ACERVO_BY,genre:gs[id]||genre,demo:true,acervo:true,url:'acervo/'+f+'.mp3',duration,added:0})}
-  const b=$('#acervoBack');if(b)b.hidden=!hid.size}
-function restoreAcervo(){const p=acervoPrefs();p.hidden=[];saveAcervo(p);addAcervo();render();toast('Acervo restaurado')}
-
 /* ---------- player ---------- */
 const isG=v=>v.startsWith('g:'),isA=v=>v.startsWith('a:');
 function artists(){const m=new Map();S.tracks.forEach(t=>m.set(t.artist,(m.get(t.artist)||0)+1));return [...m].sort((a,b)=>a[0].localeCompare(b[0],'pt'))}
@@ -732,7 +681,7 @@ function renderList(){const ids=filtered(),c=cur(),inPl=S.playlists.some(p=>p.id
     return `<div class="row${on?' playing':''}" data-id="${id}" data-i="${i}">
       <div class="idx"><span class="num">${i+1}</span><button data-act="play" aria-label="${pl?'Pausar':'Tocar'} ${esc(t.title)}">${pl?ICON.pause:ICON.play}</button></div>
       <div class="tcell"><div class="cover" style="${coverStyle(t)}"></div>
-      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a">${t.demo?`<span class="tag">${t.acervo?'Acervo':'Exemplo'}</span>`:''}<span class="alink" data-act="artist">${esc(t.artist)}</span></div></div></div>
+      <div class="tinfo" data-act="play"><div class="t">${esc(t.title)}</div><div class="a"><span class="alink" data-act="artist">${esc(t.artist)}</span></div></div></div>
       <div class="gcell"><button class="glink" data-act="genre" title="Mudar pasta e categoria">${esc(t.genre||NOGENRE)}</button></div>
       <div class="dur">${fmt(t.duration)}</div>
       <div class="acts"><button class="icon gonly" data-act="genre" aria-label="Mudar pasta e categoria">${ICON.tag}</button><button class="icon" data-act="add" aria-label="Adicionar à playlist">${ICON.plus}</button>
@@ -751,10 +700,8 @@ function removeTrack(id){const t=byId(id),p=S.playlists.find(p=>p.id===S.view);i
   const playing=cur()&&cur().id===id;if(playing){audio.pause();audio.removeAttribute('src')}
   S.tracks=S.tracks.filter(x=>x.id!==id);S.playlists.forEach(p=>p.ids=p.ids.filter(x=>x!==id));
   const qi=S.queue.indexOf(id);if(qi>-1){S.queue.splice(qi,1);if(qi<S.qi||playing)S.qi=Math.max(-1,S.qi-1)}if(playing){S.queue=[];S.qi=-1;updateNow();syncPlay()}
-  if(t.acervo){const ap=acervoPrefs();ap.hidden=[...new Set([...(ap.hidden||[]),id])];saveAcervo(ap);const b=$('#acervoBack');if(b)b.hidden=false}
   idbDel(id);lyrDel(id);LY.mem.delete(id);savePL();setTimeout(()=>{try{URL.revokeObjectURL(t.url)}catch(e){}},500);render();toast(`"${t.title}" removida`)}
 $('#q').addEventListener('input',e=>{S.q=e.target.value;renderList()});
-$('#acervoBack').addEventListener('click',restoreAcervo);
 $('#files').addEventListener('change',e=>{addFiles([...e.target.files]);e.target.value=''});
 /* lê pastas arrastadas, inclusive as de dentro */
 async function filesFromDrop(dt){const items=[...(dt.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
@@ -789,7 +736,6 @@ function openGenre(btn,id){const t=byId(id),cur=t.genre||NOGENRE;
     '<form id="gform"><input id="gnew" placeholder="Outra categoria" maxlength="30" aria-label="Nova categoria"><button type="submit">OK</button></form>';
   placePop(btn.getBoundingClientRect(),id,'genre')}
 function setGenre(id,g){const t=byId(id);if(!t)return;t.genre=normGenre(g);t.manualGenre=true;
-  if(t.acervo){const ap=acervoPrefs();ap.genre={...(ap.genre||{}),[id]:t.genre};saveAcervo(ap)}
   if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}pop.hidden=true;render();toast(`"${t.title}" agora está em ${t.genre}`)}
 function setArtist(id,a){const t=byId(id);a=String(a||'').trim();if(!t||!a)return;t.artist=a;t.manualArtist=true;if(!t.art){delete t.artLink;delete t.album;delete t.storeUrl;t.artLookV=0;setTimeout(artQueue,300)}
   if(!t.manualGenre)t.genre=knownGenre(a)||t.genre;if(!t.demo){const {url,artUrl,artOk,artChk,...rec}=t;idbPut(rec)}
@@ -812,18 +758,19 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=true;if(!e.dataTransfer)return;
   let list=[];try{list=await filesFromDrop(e.dataTransfer)}catch(err){list=[...(e.dataTransfer.files||[])]}if(list.length)addFiles(list)});
 
-/* sem internet: o app, a biblioteca do aparelho e o acervo ficam guardados */
-if('serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(reg=>{
-  const warm=()=>{const w=reg.active||navigator.serviceWorker.controller;if(w&&!(navigator.connection&&navigator.connection.saveData))w.postMessage({type:'cache-acervo'})};
-  setTimeout(warm,8000)}).catch(()=>{})})}
-addEventListener('offline',()=>toast('Sem internet: suas músicas e o acervo continuam tocando'));
+/* sem internet: o app e a biblioteca do aparelho ficam guardados */
+if('serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})})}
+addEventListener('offline',()=>toast('Sem internet: suas músicas continuam tocando'));
 addEventListener('online',()=>{toast('Internet de volta');artQueue()});
+/* o Vitrola não vem mais com músicas: limpa o acervo e os exemplos de quem já tinha */
+try{localStorage.removeItem('vitrola.acervo');const pl=JSON.parse(localStorage.getItem('vitrola.playlists'))||[];
+  if(pl.some(p=>p.ids.some(i=>/^(acervo|demo)-/.test(i)))){pl.forEach(p=>p.ids=p.ids.filter(i=>!/^(acervo|demo)-/.test(i)));localStorage.setItem('vitrola.playlists',JSON.stringify(pl))}}catch(e){}
 /* limpa o que ficou da ligação com o TIDAL, que foi removida */
 try{for(const k of Object.keys(localStorage))if(/vitrola[.-]tidal/i.test(k))localStorage.removeItem(k);
   const pl=JSON.parse(localStorage.getItem('vitrola.playlists'))||[];if(pl.some(p=>p.ids.some(i=>String(i).startsWith('td-')))){pl.forEach(p=>p.ids=p.ids.filter(i=>!String(i).startsWith('td-')));localStorage.setItem('vitrola.playlists',JSON.stringify(pl))}}catch(e){}
 
 /* backup: um arquivo .vitrola com as músicas do aparelho, capas, playlists e ajustes */
-const BK_MAGIC='VITROLA-BACKUP-1\n',BK_KEYS=['vitrola.playlists','vitrola.vol','vitrola.acervo'];
+const BK_MAGIC='VITROLA-BACKUP-1\n',BK_KEYS=['vitrola.playlists','vitrola.vol'];
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function bkStamp(){const t=+lsGet('vitrola.backupEm');$('#bkLast').textContent=t?`Último backup neste aparelho: ${new Date(t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}.`:'Você ainda não fez nenhum backup neste aparelho.'}
 async function makeBackup(){const btn=$('#bkSave');btn.disabled=true;btn.textContent='Preparando backup…';
@@ -854,8 +801,7 @@ async function restoreBackup(file){const btn=$('#bkLoad');btn.disabled=true;btn.
     try{const mine=loadPL(),theirs=JSON.parse(ls['vitrola.playlists']||'[]');
       for(const pl of theirs){const m=mine.find(x=>x.id===pl.id);if(m)m.ids=[...new Set([...m.ids,...pl.ids])];else mine.push(pl)}
       localStorage.setItem('vitrola.playlists',JSON.stringify(mine));
-      if(ls['vitrola.vol']!=null)localStorage.setItem('vitrola.vol',ls['vitrola.vol']);
-      if(ls['vitrola.acervo']!=null)localStorage.setItem('vitrola.acervo',ls['vitrola.acervo'])}catch(e){}
+      if(ls['vitrola.vol']!=null)localStorage.setItem('vitrola.vol',ls['vitrola.vol']);}catch(e){}
     toast(fail?`${ok} músicas restauradas; ${fail} não couberam neste aparelho`:`Backup restaurado: ${ok} ${ok===1?'música':'músicas'}`);
     setTimeout(()=>location.reload(),1800)}
   catch(e){toast(e&&e.message==='formato'?'Esse arquivo não é um backup do Vitrola':'Não deu para restaurar esse backup');btn.disabled=false;btn.textContent='Restaurar backup'}}
@@ -897,7 +843,6 @@ async function fetchLRCLIB(t){if(!navigator.onLine)return undefined;
 async function lyricsFor(t){if(LY.mem.has(t.id))return LY.mem.get(t.id);
   let rec=await lyrGet(t.id);
   if(!rec&&t.blob){try{const tg=await readTags(t.blob);if(tg.lyrics){const L=lyrFromText(tg.lyrics,'arquivo');if(L){rec={id:t.id,...L};lyrPut(rec)}}}catch(e){}}
-  if(!rec&&t.demo&&!t.acervo)rec={id:t.id,instrumental:true};
   const stale=rec&&rec.none&&Date.now()-(rec.when||0)>3*864e5;
   if(!rec||stale){const f=await fetchLRCLIB(t);
     if(f){rec={id:t.id,...f};lyrPut(rec)}
@@ -979,7 +924,7 @@ $('#plbtn').onclick=()=>{const f=$('#newpl'),open=f.hidden;f.hidden=!open;$('#pl
 
 /* início */
 (async()=>{S.playlists=loadPL();let v=80;try{const s=localStorage.getItem('vitrola.vol');if(s!==null)v=+s}catch(e){}$('#vol').value=v;setVol(v);
-  syncPlay();updateNow();addAcervo();render();
+  syncPlay();updateNow();render();
   const saved=await idbAll();saved.sort((a,b)=>a.added-b.added).forEach(r=>{try{if(!r.manualArtist){const m=fixMeta(r.artist,r.title);if(m.artist!==r.artist||m.title!==r.title){r.artist=m.artist;r.title=m.title;r.fixed=1}}
   const g=r.manualGenre?r.genre:(knownGenre(r.artist)||r.genre||NOGENRE);if(g!==r.genre){r.genre=g;r.fixed=1}if(r.fixed){delete r.fixed;idbPut(r)}
   S.tracks.push({...r,genre:g,url:r.link||URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):null})}catch(e){}});
