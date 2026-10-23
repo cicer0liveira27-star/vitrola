@@ -560,12 +560,24 @@ async function addFiles(files){let n=0,dup=0,failed=0;askPersist();
 
 /* ---------- player ---------- */
 const isG=v=>v.startsWith('g:'),isA=v=>v.startsWith('a:');
-function artists(){const m=new Map();S.tracks.forEach(t=>m.set(t.artist,(m.get(t.artist)||0)+1));return [...m].sort((a,b)=>a[0].localeCompare(b[0],'pt'))}
+/* pasta do artista: "Anderson Freire e Bruna Karla" vai para a pasta de Anderson Freire.
+   Só separa quando o primeiro nome já tem faixas sozinho ou aparece em parcerias diferentes,
+   assim duplas como "Henrique e Juliano" continuam juntas. */
+const SPLIT=/\s*(?:,|&|\+|\s(?:e|x|feat\.?|ft\.?|part\.?|participação|com|with|featuring|vs\.?)\s)\s*/i;
+function firstPart(a){return String(a).split(SPLIT)[0].trim()}
+let MAIN=new Map(),MAINKEY='';
+function buildMain(){const names=[...new Set(S.tracks.map(t=>t.artist))],key=names.join('\n');if(key===MAINKEY)return;MAINKEY=key;MAIN=new Map();
+  const solo=new Map(names.map(a=>[keyA(a),a])),cnt=new Map();
+  for(const a of names){const f=firstPart(a);if(f&&f!==a){const k=keyA(f);cnt.set(k,(cnt.get(k)||0)+1)}}
+  for(const a of names){const f=firstPart(a),k=keyA(f);
+    MAIN.set(a,!AG[keyA(a)]&&f&&f!==a&&!badArtist(f)&&(solo.has(k)||cnt.get(k)>=2)?(solo.get(k)||f):a)}}
+function mainOf(t){buildMain();return MAIN.get(t.artist)||t.artist}
+function artists(){const m=new Map();S.tracks.forEach(t=>{const a=mainOf(t);m.set(a,(m.get(a)||0)+1)});return [...m].sort((a,b)=>a[0].localeCompare(b[0],'pt'))}
 function genres(){const m=new Map();S.tracks.forEach(t=>m.set(t.genre||NOGENRE,(m.get(t.genre||NOGENRE)||0)+1));
   return [...m].sort((a,b)=>a[0]===NOGENRE?1:b[0]===NOGENRE?-1:a[0].localeCompare(b[0],'pt'))}
 function viewIds(){if(S.view==='all')return S.tracks.map(t=>t.id);
   if(isG(S.view)){const g=S.view.slice(2);return S.tracks.filter(t=>(t.genre||NOGENRE)===g).map(t=>t.id)}
-  if(isA(S.view)){const a=S.view.slice(2);return S.tracks.filter(t=>t.artist===a).map(t=>t.id)}const p=S.playlists.find(p=>p.id===S.view);return p?p.ids.filter(byId):[]}
+  if(isA(S.view)){const a=S.view.slice(2);return S.tracks.filter(t=>mainOf(t)===a).map(t=>t.id)}const p=S.playlists.find(p=>p.id===S.view);return p?p.ids.filter(byId):[]}
 function filtered(){const q=S.q.trim().toLowerCase();const ids=viewIds();return q?ids.filter(id=>{const t=byId(id);return (t.title+' '+t.artist).toLowerCase().includes(q)}):ids}
 function playFrom(ids,i){S.queue=ids.slice();if(S.shuffle){const f=S.queue.splice(i,1)[0];shuffleArr(S.queue);S.queue.unshift(f);i=0}S.qi=i;load()}
 function cur(){return byId(S.queue[S.qi])}
@@ -643,7 +655,7 @@ function renderNav(){
   if(isG(S.view)&&!genres().some(([g])=>'g:'+g===S.view))S.view='all';
   if(isA(S.view)&&!artists().some(([a])=>'a:'+a===S.view))S.view='all';
   const firstOf=f=>S.tracks.find(f);
-  const ars=artists().map(([a,n])=>navBtn('a:'+a,`<span class="thumb round" style="${coverStyle(firstOf(t=>t.artist===a))}"></span>`,a===UNKNOWN?'Sem artista':a,`Artista · ${nf(n)}`)).join('');
+  const ars=artists().map(([a,n])=>navBtn('a:'+a,`<span class="thumb round" style="${coverStyle(firstOf(t=>t.artist===a)||firstOf(t=>mainOf(t)===a))}"></span>`,a===UNKNOWN?'Sem artista':a,`Artista · ${nf(n)}`)).join('');
   const all=`<div class="label">Biblioteca</div>`+navBtn('all',`<span class="thumb" style="background:linear-gradient(135deg,#6a6a6a,#1c1c1c)">${NOTE}</span>`,'Todas as músicas',`Biblioteca · ${nf(S.tracks.length)}`);
   const gs=genres().map(([g,n])=>navBtn('g:'+g,`<span class="thumb" style="background:${gColor(g)};color:var(--bg)">${esc(g.charAt(0))}</span>`,g,`Categoria · ${nf(n)}`)).join('');
   const pls=S.playlists.map(p=>{const ok=p.ids.filter(byId);return navBtn(p.id,ok.length?`<span class="thumb" style="${coverStyle(byId(ok[0]))}"></span>`:`<span class="thumb">${NOTE}</span>`,p.name,`Playlist · ${nf(ok.length)}`)}).join('');
@@ -692,7 +704,7 @@ $('#list').addEventListener('click',e=>{let a=e.target.closest('[data-act]');if(
   if(a.dataset.act==='play'){const c=cur();if(c&&c.id===id)toggle();else playFrom(filtered(),+row.dataset.i)}
   else if(a.dataset.act==='add')openPop(a,id);
   else if(a.dataset.act==='genre')openGenre(a,id);
-  else if(a.dataset.act==='artist'){S.view='a:'+byId(id).artist;S.q='';$('#q').value='';render();scrollTo({top:0})}
+  else if(a.dataset.act==='artist'){S.view='a:'+mainOf(byId(id));S.q='';$('#q').value='';render();scrollTo({top:0})}
   else if(a.dataset.act==='rm'){
     if(S.armed===id&&Date.now()-S.armedAt<4000){S.armed=null;removeTrack(id)}
     else{S.armed=id;S.armedAt=Date.now();const inPl=S.playlists.some(p=>p.id===S.view);toast(inPl?'Toque no X de novo para tirar da playlist':'Toque no X de novo para excluir a música')}}});
