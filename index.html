@@ -359,7 +359,8 @@ input[type=range]:hover::-moz-range-thumb,input[type=range]:focus-visible::-moz-
     <div class="list" id="list"></div>
     <div class="foot">
       <p class="note">Arraste arquivos de áudio para esta página ou use "Adicionar músicas". Cada faixa vai sozinha para a pasta do artista e para a categoria do gênero dele; para corrigir alguma, toque na categoria. As músicas ficam salvas neste aparelho e continuam aqui quando você volta, desde que abra sempre pelo mesmo navegador e fora do modo anônimo. Nada é enviado para servidor: no celular e no computador cada um tem a sua biblioteca.</p>
-      <p class="note">O Vitrola funciona sem internet: as músicas que você adicionou do aparelho e as letras já abertas continuam disponíveis.</p>
+      <p class="note">O Vitrola funciona com e sem internet: as músicas que você adicionou ficam guardadas no aparelho e tocam do mesmo jeito sem conexão, junto com as capas e as letras que já apareceram uma vez.</p>
+      <p class="note" id="iosHint" hidden>No iPhone, adicione o Vitrola à Tela de Início (botão Compartilhar → "Adicionar à Tela de Início") e abra sempre por lá. Assim o iPhone não apaga suas músicas quando você passa um tempo sem abrir o app.</p>
       <p class="note">As letras vêm do <a href="https://lrclib.net" target="_blank" rel="noopener">LRCLIB</a>, uma base aberta e comunitária, ou da própria letra gravada no arquivo MP3. Você também pode importar um arquivo .lrc ou colar a letra na tela de letra.</p>
       <section class="backup" aria-labelledby="bkTitle">
         <h3 id="bkTitle">Backup</h3>
@@ -815,6 +816,8 @@ addEventListener('drop',async e=>{e.preventDefault();dragN=0;$('#drop').hidden=t
 
 /* sem internet: o app e a biblioteca do aparelho ficam guardados */
 if('serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})})}
+try{const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  if(ios&&!(navigator.standalone||matchMedia('(display-mode: standalone)').matches))$('#iosHint').hidden=false}catch(e){}
 addEventListener('offline',()=>toast('Sem internet: suas músicas continuam tocando'));
 addEventListener('online',()=>{toast('Internet de volta');artQueue()});
 /* o Vitrola não vem mais com músicas: limpa o acervo e os exemplos de quem já tinha */

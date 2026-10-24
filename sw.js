@@ -1,8 +1,9 @@
 /* Vitrola: guarda o app e as bibliotecas para funcionar sem internet */
 const SHELL = 'vitrola-shell-v2';
 const LIBS = 'vitrola-libs-v2';
+const ART = 'vitrola-capas-v1';
 /* o acervo de músicas foi retirado: o cache antigo dele é apagado na ativação */
-const KEEP = [SHELL, LIBS];
+const KEEP = [SHELL, LIBS, ART];
 const SHELL_FILES = ['./', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -38,6 +39,22 @@ async function cacheFirst(name, req) {
   return r;
 }
 
+/* capas achadas na internet: guardadas na primeira vez para aparecerem também sem internet */
+async function cover(req) {
+  const c = await caches.open(ART);
+  const hit = await c.match(req.url);
+  if (hit) return hit;
+  try {
+    const r = await fetch(req.url, { mode: 'cors', credentials: 'omit' });
+    if (r.ok) c.put(req.url, r.clone());
+    return r;
+  } catch (e) {
+    const r = await fetch(req);
+    if (r.type === 'opaque') c.put(req.url, r.clone());
+    return r;
+  }
+}
+
 async function staleWhileRevalidate(name, req) {
   const c = await caches.open(name);
   const hit = await c.match(req);
@@ -57,5 +74,7 @@ self.addEventListener('fetch', e => {
   /* fontes: guardadas depois da primeira vez */
   if (url.hostname === 'fonts.gstatic.com') return e.respondWith(cacheFirst(LIBS, req));
   if (url.hostname === 'fonts.googleapis.com') return e.respondWith(staleWhileRevalidate(LIBS, req));
-  /* o resto (capas, busca de capas) vai direto para a internet */
+  /* capas dos álbuns (Apple) */
+  if (/(^|\.)mzstatic\.com$/.test(url.hostname)) return e.respondWith(cover(req));
+  /* o resto (busca de capas e de letras) vai direto para a internet */
 });
